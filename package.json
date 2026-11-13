@@ -7,7 +7,8 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "sim": "tsx sim/send.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "call": "tsx sim/call.ts"
   },
   "keywords": [],
   "author": "",

@@ -4,12 +4,30 @@ export interface Config {
   authToken: string;
   publicBaseUrl: string;
   port: number;
+  /** E.164 number "speak to an agent" rings. Use your own second phone while learning. */
+  agentNumber?: string;
+  /** Dev-only: pretend it is this instant, to test open/closed behaviour. Ignored in production. */
+  nowOverride?: Date;
 }
+
+const E164 = /^\+[1-9]\d{6,14}$/;
 
 /** Read config from env. Fails fast: a missing token must never silently disable security. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const authToken = env.TWILIO_AUTH_TOKEN;
   if (!authToken) throw new Error("TWILIO_AUTH_TOKEN is required (see .env.example)");
   const publicBaseUrl = (env.PUBLIC_BASE_URL ?? "http://localhost:3000").replace(/\/+$/, "");
-  return { authToken, publicBaseUrl, port: Number(env.PORT ?? 3000) };
+
+  const agentNumber = env.AGENT_PHONE || undefined;
+  if (agentNumber && !E164.test(agentNumber)) {
+    throw new Error(`AGENT_PHONE must be E.164 like +15551234567 (got "${agentNumber}")`);
+  }
+
+  let nowOverride: Date | undefined;
+  if (env.NOW_OVERRIDE && env.NODE_ENV !== "production") {
+    nowOverride = new Date(env.NOW_OVERRIDE);
+    if (Number.isNaN(nowOverride.getTime())) throw new Error(`NOW_OVERRIDE is not a valid date: ${env.NOW_OVERRIDE}`);
+  }
+
+  return { authToken, publicBaseUrl, port: Number(env.PORT ?? 3000), agentNumber, nowOverride };
 }

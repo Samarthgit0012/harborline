@@ -7,9 +7,18 @@ export function gotoTargets(a: Action): string[] {
       return [a.node];
     case "say":
       return gotoTargets(a.then);
+    case "service":
+      return [a.back]; // the service sends the caller back here when it finishes
     default:
       return [];
   }
+}
+
+/** Service names an action refers to. */
+function serviceNames(a: Action): string[] {
+  if (a.type === "service") return [a.name];
+  if (a.type === "say") return serviceNames(a.then);
+  return [];
 }
 
 /**
@@ -29,6 +38,8 @@ export function reachesEnd(flow: Flow, a: Action, seen = new Set<string>()): boo
       if (!target || target.kind !== "action" || seen.has(a.node)) return false;
       return reachesEnd(flow, target.action, new Set(seen).add(a.node));
     }
+    case "service":
+      return false; // a service returns the caller to the flow, so it does not end the call
   }
 }
 
@@ -36,7 +47,7 @@ export function reachesEnd(flow: Flow, a: Action, seen = new Set<string>()): boo
  * Static checks on a flow. Returns a list of problems (empty = OK).
  * The goal: a caller can never be trapped, and the system can never spin without the caller acting.
  */
-export function validateFlow(flow: Flow): string[] {
+export function validateFlow(flow: Flow, knownServices?: string[]): string[] {
   const errors: string[] = [];
   const ids = Object.keys(flow.nodes);
 
@@ -68,6 +79,12 @@ export function validateFlow(flow: Flow): string[] {
     }
     for (const t of targets) {
       if (!flow.nodes[t]) errors.push(`node "${id}" goes to unknown node "${t}"`);
+    }
+    if (knownServices) {
+      const actions = node.kind === "menu" ? [...Object.values(node.options), node.onGiveUp] : [node.action];
+      for (const name of actions.flatMap(serviceNames)) {
+        if (!knownServices.includes(name)) errors.push(`node "${id}" uses unknown service "${name}"`);
+      }
     }
     edges.set(id, targets.filter((t) => flow.nodes[t]));
   }

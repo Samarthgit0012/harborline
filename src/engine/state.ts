@@ -9,10 +9,36 @@ export interface StateStore {
   /** Record one more failure at this menu and return the new total. */
   bump(callSid: string, nodeId: string): number;
   reset(callSid: string, nodeId: string): void;
+  /** What we know about this call so far (a copy: change it with `update`). */
+  get(callSid: string): Session;
+  update(callSid: string, patch: Partial<Session>): Session;
+}
+
+/** Answers collected during a first-notice-of-loss call, before the claim is created. */
+export interface FnolDraft {
+  policyNumber?: string;
+  lossDate?: string | null;
+  lossType?: "auto" | "property" | "theft" | "other";
+  injuries?: "yes" | "no" | "unknown";
+}
+
+/** Everything that must survive between webhooks of ONE call. Dropped when the call's state expires. */
+export interface Session {
+  /** Set only after the caller proved who they are. Never set from caller ID alone. */
+  authedPolicy?: string;
+  /** Policy the caller claims to be, waiting for the date-of-birth check. */
+  pendingPolicy?: string;
+  /** True if pendingPolicy came from caller ID (so we skip asking for the number). */
+  viaCallerId?: boolean;
+  /** Failed verifications during this call. */
+  authFailures: number;
+  fnol?: FnolDraft;
+  /** Claim created during this call (so a redirect replay cannot create a second one). */
+  claimNumber?: string;
 }
 
 export class MemoryStateStore implements StateStore {
-  private calls = new Map<string, { touched: number; attempts: Map<string, number> }>();
+  private calls = new Map<string, { touched: number; attempts: Map<string, number>; session: Session }>();
 
   constructor(
     private ttlMs = 2 * 60 * 60 * 1000,
@@ -23,7 +49,7 @@ export class MemoryStateStore implements StateStore {
     this.prune();
     let e = this.calls.get(callSid);
     if (!e) {
-      e = { touched: this.now(), attempts: new Map() };
+      e = { touched: this.now(), attempts: new Map(), session: { authFailures: 0 } };
       this.calls.set(callSid, e);
     }
     e.touched = this.now();
@@ -45,5 +71,15 @@ export class MemoryStateStore implements StateStore {
 
   reset(callSid: string, nodeId: string): void {
     this.entry(callSid).attempts.delete(nodeId);
+  }
+
+  get(callSid: string): Session {
+    return { ...this.entry(callSid).session };
+  }
+
+  update(callSid: string, patch: Partial<Session>): Session {
+    const e = this.entry(callSid);
+    e.session = { ...e.session, ...patch };
+    return { ...e.session };
   }
 }

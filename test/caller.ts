@@ -1,0 +1,89 @@
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { expect } from "vitest";
+import twilio from "twilio";
+import { createApp, type Deps } from "../src/app.js";
+import type { Config } from "../src/config.js";
+import { parseTwiml } from "../sim/twiml.js";
+
+export const AGENT = "+15555550123";
+export const baseConfig: Config = {
+  authToken: "test_token_123",
+  publicBaseUrl: "https://ivr.example.com",
+  port: 0,
+  agentNumber: AGENT,
+};
+
+// Tuesday 10:00 New York = open. Saturday 20:00 New York (Sun 01:00Z) = closed.
+export const OPEN = new Date("2026-11-17T15:00:00Z");
+export const CLOSED = new Date("2026-11-15T01:00:00Z");
+
+export interface TestServer {
+  base: string;
+  close: () => Promise<void>;
+}
+
+/** A fresh app (fresh in-memory database, state and lockout counters) on a random port. */
+export async function startApp(deps: Deps = {}, config: Config = baseConfig): Promise<TestServer> {
+  const server: Server = createApp(config, deps).listen(0);
+  await new Promise((r) => server.once("listening", r));
+  const base = `http://localhost:${(server.address() as AddressInfo).port}`;
+  return { base, close: () => new Promise<void>((r) => server.close(() => r())) };
+}
+
+let n = 0;
+/** A simulated caller: signs every request the way Twilio would, follows the engine's own redirects. */
+export class Caller {
+  callSid = `CA${String(++n).padStart(32, "0")}`;
+  heard: string[] = [];
+  last = parseTwiml("");
+
+  constructor(
+    private srv: TestServer,
+    public from = "+15555550100",
+  ) {}
+
+  async post(path: string, extra: Record<string, string> = {}) {
+    const params = { CallSid: this.callSid, From: this.from, ...extra };
+    const sig = twilio.getExpectedTwilioSignature(baseConfig.authToken, baseConfig.publicBaseUrl + path, params);
+    const res = await fetch(this.srv.base + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Twilio-Signature": sig },
+      body: new URLSearchParams(params).toString(),
+    });
+    expect(res.status).toBe(200);
+    this.last = parseTwiml(await res.text());
+    this.heard.push(...this.last.says);
+    return this;
+  }
+
+  /** Follow automatic redirects (no Gather/Record) until the call needs the caller or ends. */
+  async settle() {
+    for (let i = 0; i < 30 && !this.last.gatherAction && !this.last.recordAction && this.last.redirect; i++) {
+      await this.post(this.last.redirect);
+    }
+    return this;
+  }
+
+  async dial() {
+    await this.post("/voice");
+    return this.settle();
+  }
+  /** Type digits at the current prompt (also what a keypad press looks like). */
+  async press(digits: string) {
+    await this.post(this.last.gatherAction!, { Digits: digits });
+    return this.settle();
+  }
+  async silence() {
+    await this.post(this.last.redirect!); // what Twilio does when the Gather or Record times out
+    return this.settle();
+  }
+  /** The caller finished leaving a voice message. */
+  async record(recordingSid = "RE" + "a".repeat(32)) {
+    await this.post(this.last.recordAction!, { RecordingSid: recordingSid, RecordingDuration: "12" });
+    return this.settle();
+  }
+  get hearsAll() {
+    return this.heard.join(" | ");
+  }
+}

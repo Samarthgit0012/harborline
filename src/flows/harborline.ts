@@ -1,5 +1,8 @@
 import type { Action, Flow } from "./types.js";
 
+/** Code-driven services the flow may hand a call to (see src/svc). The server validates against this. */
+export const SERVICE_NAMES = ["policy", "billing", "claimstatus", "fnol"];
+
 export interface FlowOptions {
   /** Where "speak to an agent" rings. If absent, callers are told no agent is available. */
   agentNumber?: string;
@@ -12,12 +15,10 @@ export interface FlowOptions {
  */
 export function buildHarborlineFlow(opts: FlowOptions = {}): Flow {
   const toAgent: Action = { type: "goto", node: "agent" };
-  // `back` matters: an after-hours caller must return to the AFTER-HOURS menu, never the main menu
-  // (which offers "press 0" for an agent who is not there).
-  const comingSoon = (what: string, back: "main" | "closed" = "main"): Action => ({
+  const comingSoon = (what: string): Action => ({
     type: "say",
-    text: `${what} will be available soon. ${back === "main" ? "Returning to the main menu." : "Returning to the previous menu."}`,
-    then: { type: "goto", node: back },
+    text: `${what} will be available soon. Returning to the main menu.`,
+    then: { type: "goto", node: "main" },
   });
 
   return {
@@ -53,12 +54,31 @@ export function buildHarborlineFlow(opts: FlowOptions = {}): Flow {
           then: toAgent,
         },
       },
-      policy: { kind: "action", action: comingSoon("Policy information") },
-      claims: { kind: "action", action: comingSoon("Claims service") },
-      billing: { kind: "action", action: comingSoon("Billing service") },
+      // These need code (data lookups, authentication), so the flow hands the call to a service.
+      policy: { kind: "action", action: { type: "service", name: "policy", back: "main" } },
+      billing: { kind: "action", action: { type: "service", name: "billing", back: "main" } },
+      claims: {
+        kind: "menu",
+        prompt:
+          "To report a new claim, press 1. To check the status of an existing claim, press 2. " +
+          "To return to the main menu, press 9.",
+        options: {
+          "1": { type: "service", name: "fnol", back: "main" },
+          "2": { type: "service", name: "claimstatus", back: "main" },
+          "9": { type: "goto", node: "main" },
+        },
+        maxRetries: 2,
+        invalidPrompt: "Sorry, that is not a valid choice.",
+        timeoutPrompt: "Sorry, I did not get your choice.",
+        onGiveUp: {
+          type: "say",
+          text: "I am having trouble hearing you. Let me connect you to an agent.",
+          then: toAgent,
+        },
+      },
       quotes: { kind: "action", action: comingSoon("Quote service") },
-      // After-hours twin of "claims". Phase 3 replaces this with the real 24/7 claim-reporting flow.
-      closedClaims: { kind: "action", action: comingSoon("Claims service", "closed") },
+      // After-hours twin of "claims": reporting a loss works 24/7 and returns to the AFTER-HOURS menu.
+      closedClaims: { kind: "action", action: { type: "service", name: "fnol", back: "closed" } },
       agent: {
         kind: "action",
         action: opts.agentNumber

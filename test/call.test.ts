@@ -77,16 +77,14 @@ describe("business hours routing", () => {
     expect(c.last.says[0]).toContain("For policy questions, press 1");
   });
 
-  it("closed: says it is closed and offers only the claims option", async () => {
+  it("closed: says it is closed and offers only the claims option, which starts claim intake", async () => {
     now = CLOSED;
     const c = await new Caller().dial();
     expect(c.hearsAll).toContain("closed right now");
     expect(c.hearsAll).toContain("dial 9 1 1");
     expect(c.last.gatherAction).toBe("/ivr/closed/input");
     await c.press("2");
-    expect(c.hearsAll).toContain("Claims service will be available soon");
-    // Back at the AFTER-HOURS menu, not the main menu that offers an agent.
-    expect(c.last.gatherAction).toBe("/ivr/closed/input");
+    expect(c.hearsAll).toContain("I can take your claim report now");
     expect(c.hearsAll).not.toContain("To speak with an agent");
   });
 
@@ -105,8 +103,8 @@ describe("main menu", () => {
   it("valid key goes to the placeholder and returns to the menu", async () => {
     now = OPEN;
     const c = await new Caller().dial();
-    await c.press("1");
-    expect(c.hearsAll).toContain("Policy information will be available soon");
+    await c.press("4");
+    expect(c.hearsAll).toContain("Quote service will be available soon");
     expect(c.last.gatherAction).toBe("/ivr/main/input"); // back at the menu
   });
 
@@ -143,7 +141,7 @@ describe("main menu", () => {
     const c = await new Caller().dial();
     await c.silence();
     await c.silence(); // 2 failures
-    await c.press("1"); // valid -> counter resets, back at the menu
+    await c.press("4"); // valid -> counter resets, back at the menu
     await c.silence();
     await c.silence(); // 2 fresh failures: must NOT give up yet
     expect(c.last.dial).toBeUndefined();

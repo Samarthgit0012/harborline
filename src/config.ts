@@ -8,6 +8,11 @@ export interface Config {
   agentNumber?: string;
   /** Dev-only: pretend it is this instant, to test open/closed behaviour. Ignored in production. */
   nowOverride?: Date;
+  /** SQLite file for policies and claims. Default: ./data/harborline.db */
+  dbPath?: string;
+  /** Needed to send real texts (ID card). Without both, texts are skipped and only logged. */
+  twilioAccountSid?: string;
+  twilioFromNumber?: string;
 }
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -29,5 +34,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (Number.isNaN(nowOverride.getTime())) throw new Error(`NOW_OVERRIDE is not a valid date: ${env.NOW_OVERRIDE}`);
   }
 
-  return { authToken, publicBaseUrl, port: Number(env.PORT ?? 3000), agentNumber, nowOverride };
+  const twilioFromNumber = env.TWILIO_FROM_NUMBER || undefined;
+  if (twilioFromNumber && !E164.test(twilioFromNumber)) {
+    throw new Error(`TWILIO_FROM_NUMBER must be E.164 like +15551234567 (got "${twilioFromNumber}")`);
+  }
+
+  return {
+    authToken,
+    publicBaseUrl,
+    port: Number(env.PORT ?? 3000),
+    agentNumber,
+    nowOverride,
+    dbPath: env.DB_PATH || "data/harborline.db",
+    twilioAccountSid: env.TWILIO_ACCOUNT_SID || undefined,
+    twilioFromNumber,
+  };
 }

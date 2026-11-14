@@ -31,10 +31,13 @@ function runAction(twiml: VoiceResponseT, action: Action): void {
       if (action.text) twiml.say(action.text);
       twiml.hangup();
       return;
+    case "service":
+      twiml.redirect({ method: POST }, `/svc/${encodeURIComponent(action.name)}?back=${encodeURIComponent(action.back)}`);
+      return;
   }
 }
 
-function failSafe(message: string): VoiceResponseT {
+export function failSafe(message: string): VoiceResponseT {
   // A broken flow must never leave dead air. Apologise and end the call.
   const twiml = new VoiceResponse();
   twiml.say("Sorry, something went wrong. Please call back later. Goodbye.");

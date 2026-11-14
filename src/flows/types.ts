@@ -9,7 +9,12 @@ export type Action =
   | { type: "goto"; node: string }
   | { type: "say"; text: string; then: Action }
   | { type: "transfer"; to: string } // E.164 phone number to <Dial>
-  | { type: "hangup"; text?: string };
+  | { type: "hangup"; text?: string }
+  /**
+   * Hand the call to a code-driven service (authentication, claim intake...) that needs data lookups
+   * a static menu can't express. The service always finishes by sending the caller to `back`.
+   */
+  | { type: "service"; name: string; back: string };
 
 /** Asks the caller to press a key. */
 export interface MenuNode {

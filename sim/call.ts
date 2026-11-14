@@ -2,8 +2,12 @@
 //   npm run call -- 1        press 1 at the first menu
 //   npm run call -- 9 -      press 9 (invalid), then stay silent ("-" = silence)
 //   npm run call -- - - -    silence three times (watch the give-up)
-// It follows <Gather> and <Redirect> like the real platform, and stops at <Dial>, <Hangup>, or when
-// your key list runs out ("caller hangs up").
+//   npm run call -- 2 1 "" 11102026 1 2 rec     report a claim: claims, report, skip policy #, date,
+//                                               car accident, nobody hurt, then leave a recording ("rec")
+// Digits can be several at once (a date of birth is "03141985"). "" presses pound with nothing typed.
+// Set SIM_FROM=+15555550101 to call from a different caller ID (default +15555550100 = Alex Rivera).
+// It follows <Gather>, <Record> and <Redirect> like the real platform, and stops at <Dial>, <Hangup>,
+// or when your key list runs out ("caller hangs up").
 import twilio from "twilio";
 import { loadConfig } from "../src/config.js";
 import { parseTwiml } from "./twiml.js";
@@ -13,7 +17,7 @@ const keys = process.argv.slice(2);
 const callSid = "CA" + Math.random().toString(16).slice(2).padEnd(32, "0").slice(0, 32);
 
 async function post(path: string, extra: Record<string, string> = {}) {
-  const params = { CallSid: callSid, From: "+15555550100", To: "+15555550199", Direction: "inbound", ...extra };
+  const params = { CallSid: callSid, From: process.env.SIM_FROM ?? "+15555550100", To: "+15555550199", Direction: "inbound", ...extra };
   const signature = twilio.getExpectedTwilioSignature(config.authToken, config.publicBaseUrl + path, params);
   const res = await fetch(`http://localhost:${config.port}${path}`, {
     method: "POST",
@@ -44,6 +48,16 @@ for (let step = 0; step < 60; step++) {
       console.log(`  CALLER presses ${key}`);
       ({ path, xml } = await post(t.gatherAction, { Digits: key }));
     }
+  } else if (t.recordAction) {
+    const key = keys.shift();
+    if (key === "rec") {
+      console.log("  CALLER leaves a voice message");
+      ({ path, xml } = await post(t.recordAction, { RecordingSid: "RE" + "c".repeat(32), RecordingDuration: "9" }));
+    } else if (t.redirect) {
+      console.log("  (caller hangs up or says nothing during the recording)");
+      if (key === undefined) break;
+      ({ path, xml } = await post(t.redirect));
+    } else break;
   } else if (t.redirect) {
     ({ path, xml } = await post(t.redirect));
   } else if (t.dial) {

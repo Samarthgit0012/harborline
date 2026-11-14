@@ -43,6 +43,11 @@ function localParts(now: Date, timeZone: string) {
   };
 }
 
+/** Today's date ("YYYY-MM-DD") on the business's wall calendar, not UTC's. */
+export function localDate(now: Date, timeZone: string): string {
+  return localParts(now, timeZone).date;
+}
+
 const toMinutes = (hhmm: string) => {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;

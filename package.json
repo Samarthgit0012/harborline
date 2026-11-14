@@ -12,6 +12,7 @@
     "speech:eval": "tsx sim/speech-eval.ts",
     "payments:report": "tsx sim/payments-report.ts",
     "campaign": "tsx sim/campaign.ts",
+    "campaign:admin": "tsx sim/campaign-admin.ts",
     "payments:settle": "tsx sim/payments-settle.ts"
   },
   "keywords": [],

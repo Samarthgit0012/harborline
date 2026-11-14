@@ -700,3 +700,20 @@ describe("settings", () => {
     expect(() => loadConfig({ ...env, OUTBOUND_FROM: "555-0100" })).toThrow(/E.164/);
   });
 });
+
+describe("choosing the phone", () => {
+  it("never places a real call unless live mode is on", async () => {
+    const { pickCaller } = await import("../src/outbound/live.js");
+    expect(() => pickCaller({ outboundMode: "off", authToken: "x" })).toThrow(/off/);
+    expect(() => pickCaller({ authToken: "x" })).toThrow(/off/);
+    expect(pickCaller({ outboundMode: "dry-run", authToken: "x" })).toBeInstanceOf(DryRunCaller);
+    expect(() => pickCaller({ outboundMode: "live", authToken: "x" })).toThrow(/ACCOUNT_SID/);
+  });
+  it("fingerprints consent wording: one changed character, a different hash", async () => {
+    const { disclosureHash } = await import("../src/outbound/live.js");
+    const a = disclosureHash("I agree to receive payment reminders.");
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(disclosureHash("I agree to receive payment reminders.\n")).toBe(a); // surrounding whitespace is ignored
+    expect(disclosureHash("I agree to receive payment reminder.")).not.toBe(a);
+  });
+});

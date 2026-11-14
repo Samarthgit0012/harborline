@@ -114,3 +114,30 @@ describe("demo customers", () => {
     expect(repo.findByPolicyNumber("10000001")).toBeDefined();
   });
 });
+
+describe("international demo numbers", () => {
+  it("accepts an Indian number written several ways, and a US number", async () => {
+    const { normalizeE164 } = await import("../src/ops/demo.js");
+    for (const same of ["+919876543210", "+91 98765 43210", "+91-98765-43210"]) expect(normalizeE164(same)).toBe("+919876543210");
+    expect(normalizeE164("(555) 555-0100")).toBe("+15555550100");
+    expect(normalizeE164("+15555550100")).toBe("+15555550100");
+  });
+  it("refuses what cannot be a phone number", async () => {
+    const { normalizeE164 } = await import("../src/ops/demo.js");
+    for (const bad of ["", undefined, "98765", "+0123456789", "abc", "+91 98765"]) expect(normalizeE164(bad as string | undefined)).toBeUndefined();
+  });
+  it("a caller from an Indian number is recognised by caller ID and can log in", async () => {
+    const { demoPolicies } = await import("../src/ops/demo.js");
+    const repo = new SqliteRepo(":memory:");
+    for (const p of demoPolicies({ customer: "+919876543210", dob: "1985-03-14" })) repo.upsertPolicy(p);
+    const srv = await startApp({ repo, clock: () => new Date("2026-11-17T15:00:00Z") }, { ...baseConfig, hoursMode: "always-open" });
+    try {
+      const c = await new Caller(srv, "+919876543210").dial();
+      await c.press("3");
+      await c.press("03141985");
+      expect(c.hearsAll).toContain("Your balance is eighty-seven dollars and fifty cents");
+    } finally {
+      await srv.close();
+    }
+  });
+});

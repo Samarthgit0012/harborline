@@ -12,7 +12,7 @@ import { loadConfig } from "../src/config.js";
 import { disclosureHash } from "../src/outbound/live.js";
 import { normalizeUsPhone } from "../src/outbound/phone.js";
 import { OutboundStore } from "../src/outbound/store.js";
-import { DEMO_POLICY_NUMBERS, demoPolicies, dobFromDigits } from "../src/ops/demo.js";
+import { DEMO_POLICY_NUMBERS, demoPolicies, dobFromDigits, normalizeE164 } from "../src/ops/demo.js";
 import { SqliteRepo } from "../src/services/policyRepo.js";
 
 const args = process.argv.slice(2);
@@ -30,9 +30,9 @@ if (args.includes("--reset")) {
   process.exit(0);
 }
 
-const customer = normalizeUsPhone(flag("customer"));
+const customer = normalizeE164(flag("customer"));
 if (!customer) {
-  console.error("Give your own phone with --customer +1XXXXXXXXXX (US numbers only).");
+  console.error("Give your own phone in international form, for example --customer +919876543210 or --customer +15551234567.");
   process.exit(1);
 }
 const dobDigits = flag("dob") ?? "03141985";
@@ -41,9 +41,9 @@ if (!dob) {
   console.error("--dob must be a real date as MMDDYYYY, for example 03141985.");
   process.exit(1);
 }
-const second = flag("second") ? normalizeUsPhone(flag("second")) : undefined;
+const second = flag("second") ? normalizeE164(flag("second")) : undefined;
 if (flag("second") && !second) {
-  console.error("--second is not a valid US phone number.");
+  console.error("--second is not a valid phone number (use international form, like +919876543210).");
   process.exit(1);
 }
 
@@ -54,7 +54,9 @@ console.log("Demo customers ready:");
 for (const p of demo) console.log(`  policy ${p.policyNumber} (${p.product}) for the phone ending ${p.phone.slice(-4)}; balance $${(p.balanceCents / 100).toFixed(2)}`);
 console.log(`\nTo log in on a call: press 3 (billing), then type your date of birth: ${dobDigits}`);
 
-if (args.includes("--outbound-consent")) {
+if (args.includes("--outbound-consent") && !normalizeUsPhone(customer)) {
+  console.log("Skipped --outbound-consent: the outbound-calling part of this project handles US numbers only.");
+} else if (args.includes("--outbound-consent")) {
   const store = new OutboundStore(dbPath);
   const wording = "Practice project: I own this phone number and I agree to receive practice payment reminder calls from the Harborline demo.";
   const c = store.addConsent({ phone: customer, kind: "express", scope: "payment_reminders", method: "in_person", evidenceRef: "demo-self-consent", disclosureHash: disclosureHash(wording) });

@@ -1,3 +1,4 @@
+import { normalizeUsPhone } from "../outbound/phone.js";
 import type { Policy } from "../services/policyRepo.js";
 
 /** "03141985" -> "1985-03-14", or undefined if it is not a real calendar date (or before 1900). */
@@ -25,4 +26,15 @@ export function demoPolicies(opts: { customer: string; second?: string; dob: str
     out.push({ policyNumber: "90000002", holderName: "Demo Customer Two", dob: opts.dob, phone: opts.second, product: "home", status: "active", premiumCents: 8900, balanceCents: 0, nextDue: due });
   }
   return out;
+}
+
+/**
+ * Any real phone number in international form: "+91 98765 43210" -> "+919876543210". US numbers written without a
+ * country code ("(555) 555-0100") are read as US. Returns undefined if it cannot be a dialable number.
+ */
+export function normalizeE164(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const cleaned = raw.replace(/[\s().-]/g, "");
+  if (/^\+[1-9]\d{7,14}$/.test(cleaned)) return cleaned;
+  return normalizeUsPhone(raw);
 }

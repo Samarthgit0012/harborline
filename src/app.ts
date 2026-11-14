@@ -11,6 +11,8 @@ import { harborlineSchedule, isOpen, type Schedule } from "./services/businessHo
 import { SqliteRepo, type PolicyRepo } from "./services/policyRepo.js";
 import { AttemptLimiter } from "./services/rateLimiter.js";
 import { CallQueue } from "./services/queue.js";
+import { OutboundStore } from "./outbound/store.js";
+import { outboundRouter } from "./outbound/routes.js";
 import { ConsoleSms, TwilioSms, type SmsSender } from "./services/sms.js";
 import { serviceRouter } from "./svc/router.js";
 import { log, maskPhone } from "./log.js";
@@ -27,6 +29,7 @@ export interface Deps {
   queue?: CallQueue;
   ticketLimiter?: AttemptLimiter;
   payLimiter?: AttemptLimiter;
+  outbound?: OutboundStore;
 }
 
 /** Twilio sends SpeechResult (text) and Confidence ("0.0"-"1.0", not guaranteed) when speech was used. */
@@ -48,6 +51,7 @@ export function createApp(config: Config, deps: Deps = {}) {
   const ticketLimiter = deps.ticketLimiter ?? new AttemptLimiter(3, 60 * 60 * 1000, () => clock().getTime());
   // At most 3 card payment attempts per policy and per calling number per hour.
   const payLimiter = deps.payLimiter ?? new AttemptLimiter(3, 60 * 60 * 1000, () => clock().getTime());
+  const outbound = deps.outbound ?? new OutboundStore(config.dbPath ?? ":memory:");
   const sms =
     deps.sms ??
     (config.twilioAccountSid && config.twilioFromNumber
@@ -79,7 +83,10 @@ export function createApp(config: Config, deps: Deps = {}) {
   });
 
   // Code-driven services: authentication, account read-backs, claim intake.
-  app.use("/svc", serviceRouter({ repo, state, limiter, sms, clock, schedule, agentNumber: config.agentNumber, queue, ticketLimiter, holdMusicUrl: config.holdMusicUrl, payEnabled: !!config.payEnabled, payConnector: config.payConnector, publicBaseUrl: config.publicBaseUrl, payLimiter }));
+  app.use("/svc", serviceRouter({ repo, state, limiter, sms, clock, schedule, agentNumber: config.agentNumber, queue, ticketLimiter, holdMusicUrl: config.holdMusicUrl, payEnabled: !!config.payEnabled, payConnector: config.payConnector, publicBaseUrl: config.publicBaseUrl, payLimiter, outbound }));
+
+  // Webhooks for calls WE place (campaigns). Same signature check as everything else; refuses unless OUTBOUND_MODE is on.
+  app.use("/outbound", outboundRouter({ store: outbound, state, clock, mode: config.outboundMode ?? "off", callback: config.outboundCallback }));
 
   // The caller is (re)entering a node, e.g. after a Redirect.
   app.post("/ivr/:nodeId", (req, res) => {

@@ -1,7 +1,7 @@
 import type { Action, Flow } from "./types.js";
 
 /** Code-driven services the flow may hand a call to (see src/svc). The server validates against this. */
-export const SERVICE_NAMES = ["policy", "billing", "claimstatus", "fnol", "handoff", "voicemail"];
+export const SERVICE_NAMES = ["policy", "billing", "claimstatus", "fnol", "handoff", "voicemail", "optout"];
 
 export interface FlowOptions {
   /** Where "speak to an agent" rings. If absent, callers are told no agent is available. */
@@ -92,6 +92,15 @@ export function buildHarborlineFlow(opts: FlowOptions = {}): Flow {
               label: "to get a quote",
               phrases: ["quote", "new quote", "get a quote", "price", "new policy", "buy insurance", "sign up"],
               action: { type: "goto", node: "quotes" },
+            },
+            {
+              id: "stop_calls",
+              label: "to stop receiving calls from us",
+              phrases: [
+                "stop calling me", "stop calling", "stop the calls", "dont call me", "do not call me", "do not call",
+                "take me off your list", "remove me from your list", "no more calls", "opt out", "unsubscribe",
+              ],
+              action: { type: "service", name: "optout", back: "main" },
             },
             {
               id: "agent",

@@ -19,6 +19,12 @@ export interface Config {
   payEnabled?: boolean;
   /** Unique name of the Twilio Pay Connector to use. Omit to use the one named "Default". */
   payConnector?: string;
+  /** Outbound calling: "off" (default: webhooks refuse), "dry-run" (decisions and fake calls, rings nobody), or "live". */
+  outboundMode?: "off" | "dry-run" | "live";
+  /** Our caller ID for outbound calls: must be a Twilio number you own (E.164). */
+  outboundFrom?: string;
+  /** The number a recipient can call to ask us to stop (E.164). Spoken in every outbound message. Required for live mode. */
+  outboundCallback?: string;
 }
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -66,6 +72,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error("PAY_ENABLED needs PUBLIC_BASE_URL to be https (Twilio requires an https action URL for <Pay>)");
   }
 
+  const outboundMode = (env.OUTBOUND_MODE || "off") as "off" | "dry-run" | "live";
+  if (!["off", "dry-run", "live"].includes(outboundMode)) throw new Error('OUTBOUND_MODE must be "off", "dry-run" or "live"');
+  const outboundFrom = env.OUTBOUND_FROM || undefined;
+  const outboundCallback = env.OUTBOUND_CALLBACK || undefined;
+  for (const [name, v] of [["OUTBOUND_FROM", outboundFrom], ["OUTBOUND_CALLBACK", outboundCallback]] as const) {
+    if (v && !E164.test(v)) throw new Error(`${name} must be E.164 like +15551234567 (got "${v}")`);
+  }
+  if (outboundMode === "live") {
+    if (!outboundFrom || !outboundCallback) throw new Error("OUTBOUND_MODE=live needs OUTBOUND_FROM and OUTBOUND_CALLBACK");
+    if (!env.TWILIO_ACCOUNT_SID) throw new Error("OUTBOUND_MODE=live needs TWILIO_ACCOUNT_SID");
+    if (!publicBaseUrl.startsWith("https://")) throw new Error("OUTBOUND_MODE=live needs an https PUBLIC_BASE_URL");
+  }
+
   return {
     authToken,
     publicBaseUrl,
@@ -78,5 +97,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     holdMusicUrl,
     payEnabled,
     payConnector,
+    outboundMode,
+    outboundFrom,
+    outboundCallback,
   };
 }

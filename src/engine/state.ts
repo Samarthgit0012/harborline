@@ -49,6 +49,8 @@ export interface Session {
   ticketNumber?: string;
   /** The card payment attempt this call started (a number we made up: never any card data). */
   paymentNumber?: string;
+  /** For an OUTBOUND call: the person we rang (our own number is the call's "From", so we remember theirs here). */
+  contactPhone?: string;
 }
 
 export class MemoryStateStore implements StateStore {

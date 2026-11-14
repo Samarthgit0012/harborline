@@ -15,7 +15,7 @@ import { speakDigits } from "./speak.js";
 
 /** What the IVR already knows about the caller, handed to the agent so they never have to re-ask. */
 export interface HandoffContext {
-  reason: "general" | "claim_injury";
+  reason: "general" | "claim_injury" | "campaign_response";
   /** Injury claim: goes to the front of the line. */
   urgent: boolean;
   /** The caller proved who they are during THIS call (Lesson 6), not just "caller ID matched". */
@@ -194,6 +194,7 @@ export class CallQueue {
 export function whisperText(ctx: HandoffContext | undefined): string {
   if (!ctx) return "Harborline call. No details are available.";
   const parts = ["Harborline call."];
+  if (ctx.reason === "campaign_response") parts.push("They are returning an outbound call from us.");
   if (ctx.urgent) parts.push("Urgent. Injury claim.");
   if (ctx.verified) {
     parts.push(ctx.policyLast4 ? `Verified caller, policy ending ${speakDigits(ctx.policyLast4, 4)}.` : "Verified caller.");

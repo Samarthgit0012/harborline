@@ -6,6 +6,7 @@ import type { PolicyRepo } from "../services/policyRepo.js";
 import type { SmsSender } from "../services/sms.js";
 import type { Schedule } from "../services/businessHours.js";
 import type { CallQueue } from "../services/queue.js";
+import type { OutboundStore } from "../outbound/store.js";
 
 export const { VoiceResponse } = twilio.twiml;
 export type Twiml = InstanceType<typeof VoiceResponse>;
@@ -32,6 +33,8 @@ export interface SvcDeps {
   publicBaseUrl: string;
   /** Caps card payment attempts per policy and per calling number (stops card-testing). */
   payLimiter: AttemptLimiter;
+  /** Consent, do-not-call and campaign records (used here for the inbound "stop calling me" request). */
+  outbound: OutboundStore;
 }
 
 export const send = (res: Response, t: Twiml) => res.type("text/xml").send(t.toString());

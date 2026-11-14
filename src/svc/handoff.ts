@@ -21,6 +21,11 @@ const h = (path: string, q: Record<string, string> = {}) => svcUrl(`handoff/${pa
 export function mountHandoff(r: Router, d: SvcDeps) {
   const open = () => isOpen(d.clock(), d.schedule);
   const back = (req: Request) => callInfo(req).back;
+  /** Like callInfo, but on an OUTBOUND call "from" is the person we rang (our own number is the call's From). */
+  const who = (req: Request) => {
+    const info = callInfo(req);
+    return { ...info, from: d.state.get(info.callSid).contactPhone ?? info.from };
+  };
 
   /** The caller wants a person. Decide: no agent line, after hours, or into the line. */
   r.post("/handoff", (req, res) => {
@@ -36,9 +41,10 @@ export function mountHandoff(r: Router, d: SvcDeps) {
     } else {
       const s = d.state.get(callSid);
       const injury = req.query.reason === "claim_injury";
+      const reason = injury ? "claim_injury" : req.query.reason === "campaign_response" ? "campaign_response" : "general";
       const policy = s.authedPolicy ?? s.fnol?.policyNumber;
       const ctx: HandoffContext = {
-        reason: injury ? "claim_injury" : "general",
+        reason,
         urgent: injury,
         verified: !!s.authedPolicy,
         policyLast4: policy?.slice(-4),
@@ -211,7 +217,7 @@ export function mountHandoff(r: Router, d: SvcDeps) {
   }
 
   r.post("/handoff/callback", (req, res) => {
-    const { from } = callInfo(req);
+    const { from } = who(req);
     const t = new VoiceResponse();
     if (US_MOBILE_OR_LANDLINE.test(from)) {
       ask(t, {
@@ -228,7 +234,7 @@ export function mountHandoff(r: Router, d: SvcDeps) {
   });
 
   r.post("/handoff/callback/in", (req, res) => {
-    const { callSid, from, digits } = callInfo(req);
+    const { callSid, from, digits } = who(req);
     const t = new VoiceResponse();
     const usable = US_MOBILE_OR_LANDLINE.test(from);
     if (digits === "1" && usable) finishCallback(t, callSid, from, `cb:${from}`);
@@ -253,7 +259,7 @@ export function mountHandoff(r: Router, d: SvcDeps) {
   });
 
   r.post("/handoff/callback/number/in", (req, res) => {
-    const { callSid, from, digits } = callInfo(req);
+    const { callSid, from, digits } = who(req);
     const t = new VoiceResponse();
     if (digits && /^[2-9]\d{9}$/.test(digits)) {
       finishCallback(t, callSid, `+1${digits}`, `cb:${from || callSid}`);
@@ -270,7 +276,7 @@ export function mountHandoff(r: Router, d: SvcDeps) {
 
   /** The ticket exists BEFORE the recording starts, so a hang-up mid-message still leaves a callback request. */
   r.post("/voicemail", (req, res) => {
-    const { callSid, from } = callInfo(req);
+    const { callSid, from } = who(req);
     const t = new VoiceResponse();
     const made = makeTicket(callSid, "voicemail", from || "unknown", `cb:${from || callSid}`);
     if (made === "limited") {

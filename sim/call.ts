@@ -69,6 +69,19 @@ for (let step = 0; step < 60; step++) {
       if (key === undefined) break;
       ({ path, xml } = await post(t.redirect));
     } else break;
+  } else if (t.pay) {
+    // In real life the caller now types their card into TWILIO. We never see those digits, only the outcome.
+    console.log(`  [Twilio collects the card for $${t.pay.chargeAmount} and talks to the processor. This server sees none of it]`);
+    const key = keys.shift();
+    if (key === undefined) {
+      console.log("  (caller hangs up mid-payment: no outcome given)");
+      break;
+    }
+    const results: Record<string, string> = { "pay:success": "success", "pay:star": "caller-interrupted-with-star", "pay:fail": "too-many-failed-attempts", "pay:error": "payment-connector-error" };
+    const result = results[key] ?? "success";
+    console.log(`  TWILIO reports Result=${result}`);
+    const action = new URL(t.pay.action);
+    ({ path, xml } = await post(action.pathname + action.search, { Result: result, ...(result === "success" ? { PaymentConfirmationCode: "ch_simulated_123" } : {}) }));
   } else if (t.redirect) {
     ({ path, xml } = await post(t.redirect));
   } else if (t.dial) {

@@ -30,7 +30,7 @@ export function mountFnol(r: Router, d: SvcDeps) {
     const t = new VoiceResponse();
     t.say(
       "I can take your claim report now. If anyone is injured or in danger, hang up and dial 9 1 1 first. " +
-        "Your description at the end of this call will be recorded.",
+        "Your description at the end of this call will be recorded. Please do not say any card numbers or other payment details.",
     );
     if (s.authedPolicy) redirect(t, step("fnol/date", back));
     else {

@@ -63,6 +63,32 @@ export interface Ticket {
 
 export type NewTicket = Pick<Ticket, "kind" | "phone" | "reason" | "policyNumber" | "policyVerified" | "claimNumber" | "urgent">;
 
+/**
+ * One attempt to pay by card. Note what is NOT here: no card number, no expiry, no security code, no payment
+ * token. Those live only with the payment processor. We keep the amount, what happened, and the processor's
+ * confirmation code (a transaction reference, not card data) so a human can match it to the processor's records.
+ */
+export interface Payment {
+  paymentNumber: string;
+  policyNumber: string;
+  amountCents: number;
+  /** started: the caller is typing their card. succeeded / failed: the processor told us. unconfirmed: we do NOT know (reconcile by hand). */
+  status: "started" | "succeeded" | "failed" | "unconfirmed";
+  /** Twilio's Result value ("success", "caller-interrupted-with-star", ...). */
+  result: string | null;
+  confirmation: string | null;
+  /** The balance was smaller than the payment by the time it landed (paid twice, or paid elsewhere). A human must look. */
+  needsReview: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentOutcome {
+  status: "succeeded" | "failed" | "unconfirmed";
+  result: string;
+  confirmation?: string;
+}
+
 /** The only door to customer data. A real client swaps this for their policy-admin system's API. */
 export interface PolicyRepo {
   findByPhone(phone: string): Policy[];
@@ -73,8 +99,23 @@ export interface PolicyRepo {
   createTicket(input: NewTicket, now?: Date): Ticket;
   attachTicketRecording(ticketNumber: string, recordingSid: string): void;
   openTickets(): Ticket[];
+  /** Record that a card payment is about to be attempted. Done BEFORE the caller types anything. */
+  startPayment(policyNumber: string, amountCents: number, now?: Date): Payment;
+  getPayment(paymentNumber: string): Payment | undefined;
+  /** Apply the result. A payment already finished is returned unchanged, so a repeated webhook cannot apply it twice. */
+  completePayment(paymentNumber: string, outcome: PaymentOutcome, now?: Date): Payment | undefined;
+  /** Attempts we never heard back about (started too long ago) plus ones marked unconfirmed: the reconciliation list. */
+  unresolvedPayments(olderThanMs: number, now?: Date): Payment[];
+  /**
+   * Payments on this policy that might still turn into a charge: in progress (started) or of unknown outcome
+   * (unconfirmed). While any exist, a new payment is refused so nobody is charged twice.
+   * `ownOpenPayment` is the caller's own attempt that is still in progress (it is being reused, so it is not "another" payment).
+   * It is only excluded while it is still "started": once it is unconfirmed it blocks like any other.
+   */
+  blockingPayments(policyNumber: string, ownOpenPayment?: string): Payment[];
 }
 
+const PAYMENT_BASE = 300000; // payments are spoken as "3 0 0, 0 0 1"
 const TICKET_BASE = 200000; // tickets are spoken as "2 0 0, 0 0 1"
 const CLAIM_BASE = 100000; // claim 1 is spoken as "1 0 0, 0 0 1": six digits is easy to write down
 type Row = Record<string, string | number | null>;
@@ -98,6 +139,12 @@ export class SqliteRepo implements PolicyRepo {
         status TEXT NOT NULL, loss_date TEXT, loss_type TEXT NOT NULL, injuries TEXT NOT NULL,
         urgent INTEGER NOT NULL, callback_phone TEXT NOT NULL, recording_sid TEXT, created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, policy_number TEXT NOT NULL, amount_cents INTEGER NOT NULL,
+        status TEXT NOT NULL, result TEXT, confirmation TEXT, needs_review INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS payments_confirmation ON payments(confirmation) WHERE confirmation IS NOT NULL;
       CREATE TABLE IF NOT EXISTS tickets (
         id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, phone TEXT NOT NULL, reason TEXT NOT NULL,
         policy_number TEXT, policy_verified INTEGER NOT NULL, claim_number TEXT, urgent INTEGER NOT NULL,
@@ -211,6 +258,79 @@ export class SqliteRepo implements PolicyRepo {
 
   attachTicketRecording(ticketNumber: string, recordingSid: string): void {
     this.db.prepare("UPDATE tickets SET recording_sid = ? WHERE id = ?").run(recordingSid, Number(ticketNumber) - TICKET_BASE);
+  }
+
+  private toPayment(r: Row): Payment {
+    return {
+      paymentNumber: String(PAYMENT_BASE + (r.id as number)),
+      policyNumber: r.policy_number as string,
+      amountCents: r.amount_cents as number,
+      status: r.status as Payment["status"],
+      result: r.result as string | null,
+      confirmation: r.confirmation as string | null,
+      needsReview: r.needs_review === 1,
+      createdAt: r.created_at as string,
+      updatedAt: r.updated_at as string,
+    };
+  }
+
+  startPayment(policyNumber: string, amountCents: number, now: Date = new Date()): Payment {
+    if (!Number.isInteger(amountCents) || amountCents <= 0) throw new Error("payment amount must be a positive whole number of cents");
+    const t = now.toISOString();
+    const res = this.db
+      .prepare("INSERT INTO payments (policy_number, amount_cents, status, created_at, updated_at) VALUES (?,?,?,?,?)")
+      .run(policyNumber, amountCents, "started", t, t);
+    return this.getPayment(String(PAYMENT_BASE + Number(res.lastInsertRowid)))!;
+  }
+
+  getPayment(paymentNumber: string): Payment | undefined {
+    if (!/^\d{6}$/.test(paymentNumber)) return undefined;
+    const r = this.db.prepare("SELECT * FROM payments WHERE id = ?").get(Number(paymentNumber) - PAYMENT_BASE) as Row | undefined;
+    return r && this.toPayment(r);
+  }
+
+  completePayment(paymentNumber: string, outcome: PaymentOutcome, now: Date = new Date()): Payment | undefined {
+    const current = this.getPayment(paymentNumber);
+    if (!current) return undefined;
+    // Only a payment still waiting for its result can be settled. Anything else is a repeat delivery or a late report.
+    // (An "unconfirmed" attempt may still be upgraded once we learn the truth.)
+    if (current.status !== "started" && current.status !== "unconfirmed") return current;
+    if (current.status === "unconfirmed" && outcome.status === "unconfirmed") return current;
+
+    const id = Number(paymentNumber) - PAYMENT_BASE;
+    this.db.exec("BEGIN");
+    try {
+      let needsReview = 0;
+      if (outcome.status === "succeeded") {
+        const pol = this.db.prepare("SELECT balance_cents FROM policies WHERE policy_number = ?").get(current.policyNumber) as Row | undefined;
+        const balance = (pol?.balance_cents as number | undefined) ?? 0;
+        if (balance < current.amountCents) needsReview = 1; // overpaid: never let the balance go negative, flag it
+        this.db.prepare("UPDATE policies SET balance_cents = ? WHERE policy_number = ?").run(Math.max(0, balance - current.amountCents), current.policyNumber);
+      }
+      this.db
+        .prepare("UPDATE payments SET status = ?, result = ?, confirmation = ?, needs_review = ?, updated_at = ? WHERE id = ?")
+        .run(outcome.status, outcome.result, outcome.confirmation ?? null, needsReview, now.toISOString(), id);
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+    return this.getPayment(paymentNumber);
+  }
+
+  unresolvedPayments(olderThanMs: number, now: Date = new Date()): Payment[] {
+    const cutoff = new Date(now.getTime() - olderThanMs).toISOString();
+    const rows = this.db
+      .prepare("SELECT * FROM payments WHERE status = 'unconfirmed' OR (status = 'started' AND created_at < ?) ORDER BY id ASC")
+      .all(cutoff) as Row[];
+    return rows.map((r) => this.toPayment(r));
+  }
+
+  blockingPayments(policyNumber: string, ownOpenPayment?: string): Payment[] {
+    const rows = this.db
+      .prepare("SELECT * FROM payments WHERE policy_number = ? AND status IN ('started','unconfirmed') ORDER BY id ASC")
+      .all(policyNumber) as Row[];
+    return rows.map((r) => this.toPayment(r)).filter((p) => !(p.paymentNumber === ownOpenPayment && p.status === "started"));
   }
 
   openTickets(): Ticket[] {

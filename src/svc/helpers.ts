@@ -25,6 +25,13 @@ export interface SvcDeps {
   ticketLimiter: AttemptLimiter;
   /** Optional https URL of an audio file to play while callers wait. Without it they hear short pauses. */
   holdMusicUrl?: string;
+  /** Is card payment switched on? Off unless a Pay Connector is set up. */
+  payEnabled: boolean;
+  payConnector?: string;
+  /** Needed to build the absolute https URLs <Pay> requires for its callbacks. */
+  publicBaseUrl: string;
+  /** Caps card payment attempts per policy and per calling number (stops card-testing). */
+  payLimiter: AttemptLimiter;
 }
 
 export const send = (res: Response, t: Twiml) => res.type("text/xml").send(t.toString());

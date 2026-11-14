@@ -47,6 +47,8 @@ export interface Session {
   handoffState?: "waiting" | "connected" | "left";
   /** Callback or voicemail ticket made during this call (so a replayed request cannot make a second one). */
   ticketNumber?: string;
+  /** The card payment attempt this call started (a number we made up: never any card data). */
+  paymentNumber?: string;
 }
 
 export class MemoryStateStore implements StateStore {

@@ -57,10 +57,14 @@ export function mountAccount(r: Router, d: SvcDeps) {
 
       const today = localDate(d.clock(), d.schedule.timeZone);
       const summary = kind === "policy" ? policySummary(policy) : billingSummary(policy, today);
+      const canPay =
+        kind === "billing" && d.payEnabled && policy.balanceCents > 0 && !d.repo.blockingPayments(policy.policyNumber, s.paymentNumber).length;
       const menu =
         kind === "policy"
           ? " To hear that again, press 1. To get your ID card by text message, press 2. To return to the main menu, press 9."
-          : " To hear that again, press 1. To return to the main menu, press 9.";
+          : canPay
+            ? " To hear that again, press 1. To pay your balance by card, press 2. To return to the main menu, press 9."
+            : " To hear that again, press 1. To return to the main menu, press 9.";
       const t = new VoiceResponse();
       ask(t, { action: svcUrl(`${kind}/input`, { back }), numDigits: 1, prompt: summary + menu });
       send(res, t);
@@ -79,6 +83,8 @@ export function mountAccount(r: Router, d: SvcDeps) {
         redirect(t, svcUrl(kind, { back }));
       } else if (digits === "9") {
         redirect(t, `/ivr/${back}`);
+      } else if (digits === "2" && kind === "billing" && d.payEnabled && policy.balanceCents > 0 && !d.repo.blockingPayments(policy.policyNumber, s.paymentNumber).length) {
+        redirect(t, svcUrl("pay", { back }));
       } else if (digits === "2" && kind === "policy") {
         // Always to the number ON FILE, never to the number calling in: caller ID can be spoofed.
         try {

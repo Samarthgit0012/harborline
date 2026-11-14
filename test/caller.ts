@@ -37,6 +37,8 @@ export class Caller {
   callSid = `CA${String(++n).padStart(32, "0")}`;
   heard: string[] = [];
   last = parseTwiml("");
+  /** HTTP status of the most recent response (200 for TwiML, 204 for Twilio status callbacks). */
+  status = 0;
 
   constructor(
     private srv: TestServer,
@@ -51,7 +53,8 @@ export class Caller {
       headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Twilio-Signature": sig },
       body: new URLSearchParams(params).toString(),
     });
-    expect(res.status).toBe(200);
+    expect([200, 204]).toContain(res.status);
+    this.status = res.status;
     this.last = parseTwiml(await res.text());
     this.heard.push(...this.last.says);
     return this;
@@ -102,6 +105,15 @@ export class Caller {
   /** One more pass of the hold loop (what Twilio does when the Gather times out and the Redirect runs). */
   async holdAgain() {
     await this.post(this.last.redirect!);
+    return this.settle();
+  }
+  /**
+   * Twilio finished collecting the card (on ITS side) and reports how it went to the <Pay> action URL.
+   * We send only the Result, plus whatever extra fields a test wants to throw at the server.
+   */
+  async payResult(result: string, extra: Record<string, string> = {}) {
+    const action = new URL(this.last.pay!.action);
+    await this.post(action.pathname + action.search, { Result: result, ...extra });
     return this.settle();
   }
   /** The caller finished leaving a voice message. */

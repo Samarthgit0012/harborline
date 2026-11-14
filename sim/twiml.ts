@@ -1,6 +1,8 @@
 // Tiny TwiML reader for the simulator and tests. It reads only what OUR engine emits,
 // so a few regexes are enough. It is not a general XML parser.
 export interface ParsedTwiml {
+  /** The TwiML exactly as received. */
+  raw: string;
   says: string[];
   gatherAction?: string;
   /** <Gather input="...">: "dtmf" when absent (Twilio's default), or e.g. "dtmf speech". */
@@ -18,6 +20,8 @@ export interface ParsedTwiml {
   dialAction?: string;
   /** <Number url=...>: TwiML played privately to the person we dial, before the caller is bridged (the whisper). */
   whisperUrl?: string;
+  /** <Pay ...>: attributes as written. The caller types their card into Twilio, not into us, so there is nothing else to read. */
+  pay?: Record<string, string>;
   /** <Play> inside the prompt (hold music). */
   playUrl?: string;
   hangup: boolean;
@@ -30,9 +34,16 @@ const pick = (xml: string, re: RegExp) => {
   return v === undefined ? undefined : decode(v);
 };
 
+function payAttrs(xml: string): Record<string, string> | undefined {
+  const tag = xml.match(/<Pay\s([^>]*?)\/?>/)?.[1];
+  if (tag === undefined) return undefined;
+  return Object.fromEntries([...tag.matchAll(/(\w+)="([^"]*)"/g)].map((m) => [m[1], decode(m[2])]));
+}
+
 export function parseTwiml(xml: string): ParsedTwiml {
   const num = xml.match(/<Gather[^>]*\snumDigits="(\d+)"/)?.[1];
   return {
+    raw: xml,
     says: [...xml.matchAll(/<Say[^>]*>([\s\S]*?)<\/Say>/g)].map((m) => decode(m[1])),
     gatherAction: pick(xml, /<Gather[^>]*\saction="([^"]+)"/),
     gatherNumDigits: num ? Number(num) : undefined,
@@ -45,6 +56,7 @@ export function parseTwiml(xml: string): ParsedTwiml {
     dialAction: pick(xml, /<Dial[^>]*\saction="([^"]+)"/),
     whisperUrl: pick(xml, /<Number[^>]*\surl="([^"]+)"/),
     playUrl: pick(xml, /<Play[^>]*>([^<]+)<\/Play>/),
+    pay: payAttrs(xml),
     hangup: /<Hangup\s*\/>/.test(xml),
   };
 }

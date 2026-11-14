@@ -15,6 +15,10 @@ export interface Config {
   twilioFromNumber?: string;
   /** https URL of hold music (an mp3 or wav you host). Optional. */
   holdMusicUrl?: string;
+  /** Offer "pay by card" on the billing menu. Needs a Pay Connector on your Twilio account. Default: off. */
+  payEnabled?: boolean;
+  /** Unique name of the Twilio Pay Connector to use. Omit to use the one named "Default". */
+  payConnector?: string;
 }
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -52,6 +56,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (!ok) throw new Error("HOLD_MUSIC_URL must be an https URL to an audio file");
   }
 
+  const payConnector = env.PAY_CONNECTOR || undefined;
+  if (payConnector && !/^[A-Za-z0-9_-]{1,64}$/.test(payConnector)) {
+    throw new Error("PAY_CONNECTOR must be 1 to 64 letters, digits, dashes or underscores");
+  }
+  const payEnabled = env.PAY_ENABLED === "true";
+  if (payEnabled && !publicBaseUrl.startsWith("https://")) {
+    // Twilio's Pay docs: the action URL "Must use https".
+    throw new Error("PAY_ENABLED needs PUBLIC_BASE_URL to be https (Twilio requires an https action URL for <Pay>)");
+  }
+
   return {
     authToken,
     publicBaseUrl,
@@ -62,5 +76,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     twilioAccountSid: env.TWILIO_ACCOUNT_SID || undefined,
     twilioFromNumber,
     holdMusicUrl,
+    payEnabled,
+    payConnector,
   };
 }

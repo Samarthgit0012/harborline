@@ -279,7 +279,7 @@ export function mountHandoff(r: Router, d: SvcDeps) {
     } else {
       t.say(
         `Please leave your name, your phone number and a short message after the beep. Your reference number is ${speakDigits(made.ticketNumber)}. ` +
-          "Press pound when you are finished.",
+          "Please do not say any card numbers. Press pound when you are finished.",
       );
       t.record({ action: svcUrl("voicemail/done"), method: POST, maxLength: 120, finishOnKey: "#", playBeep: true });
       redirect(t, svcUrl("voicemail/done")); // reached only if nothing was recorded

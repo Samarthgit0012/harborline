@@ -3,6 +3,7 @@ import type { Action, Flow, MenuNode } from "../flows/types.js";
 import type { StateStore } from "./state.js";
 import { decide, hintsFor, matchIntent, yesNo } from "../services/intent.js";
 import { log } from "../log.js";
+import { redactPans } from "../services/pci.js";
 
 const { VoiceResponse } = twilio.twiml;
 export type VoiceResponseT = InstanceType<typeof VoiceResponse>;
@@ -57,7 +58,7 @@ export function failSafe(message: string): VoiceResponseT {
   const twiml = new VoiceResponse();
   twiml.say("Sorry, something went wrong. Please call back later. Goodbye.");
   twiml.hangup();
-  console.error(JSON.stringify({ level: "error", msg: message }));
+  console.error(JSON.stringify({ level: "error", msg: redactPans(message) }));
   return twiml;
 }
 

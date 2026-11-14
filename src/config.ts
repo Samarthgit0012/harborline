@@ -32,6 +32,10 @@ export interface Config {
   retentionDays?: RetentionDays;
   /** "dry-run" (default) only reports what the retention job would delete; "live" really deletes at Twilio. */
   retentionMode?: "dry-run" | "live";
+  /** "business" (default: the real weekly hours) or "always-open" (a DEMO setting: every day, all day). */
+  hoursMode?: "business" | "always-open";
+  /** Your Twilio number (E.164). Used by the setup and readiness tools to find and configure it. */
+  twilioPhoneNumber?: string;
 }
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -104,6 +108,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!["dry-run", "live"].includes(retentionMode)) throw new Error('RETENTION_MODE must be "dry-run" or "live"');
   if (retentionMode === "live" && !env.TWILIO_ACCOUNT_SID) throw new Error("RETENTION_MODE=live needs TWILIO_ACCOUNT_SID");
 
+  const hoursMode = (env.HOURS_MODE || "business") as "business" | "always-open";
+  if (!["business", "always-open"].includes(hoursMode)) throw new Error('HOURS_MODE must be "business" or "always-open"');
+  const twilioPhoneNumber = env.TWILIO_PHONE_NUMBER || undefined;
+  if (twilioPhoneNumber && !E164.test(twilioPhoneNumber)) {
+    throw new Error(`TWILIO_PHONE_NUMBER must be E.164 like +15551234567 (got "${twilioPhoneNumber}")`);
+  }
+
   return {
     authToken,
     publicBaseUrl,
@@ -122,5 +133,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     recordAgentCalls: env.RECORD_AGENT_CALLS === "true",
     retentionDays,
     retentionMode,
+    hoursMode,
+    twilioPhoneNumber,
   };
 }

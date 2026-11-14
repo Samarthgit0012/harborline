@@ -7,7 +7,7 @@ import { validateFlow } from "./flows/validate.js";
 import { MemoryStateStore, type StateStore } from "./engine/state.js";
 import { failSafe, handleConfirm, handleInput, renderNode, type Speech, type VoiceResponseT } from "./engine/engine.js";
 import { parseConfidence } from "./services/intent.js";
-import { harborlineSchedule, isOpen, type Schedule } from "./services/businessHours.js";
+import { alwaysOpenSchedule, harborlineSchedule, isOpen, type Schedule } from "./services/businessHours.js";
 import { SqliteRepo, type PolicyRepo } from "./services/policyRepo.js";
 import { AttemptLimiter } from "./services/rateLimiter.js";
 import { CallQueue } from "./services/queue.js";
@@ -45,7 +45,7 @@ function readSpeech(body: Record<string, unknown> | undefined): Speech | undefin
 
 export function createApp(config: Config, deps: Deps = {}) {
   const flow = deps.flow ?? buildHarborlineFlow({ agentNumber: config.agentNumber });
-  const schedule = deps.schedule ?? harborlineSchedule;
+  const schedule = deps.schedule ?? (config.hoursMode === "always-open" ? alwaysOpenSchedule : harborlineSchedule);
   const state = deps.state ?? new MemoryStateStore();
   const clock = deps.clock ?? (config.nowOverride ? () => config.nowOverride! : () => new Date());
   const repo = deps.repo ?? new SqliteRepo(config.dbPath ?? ":memory:");

@@ -170,6 +170,18 @@ export class SqliteRepo implements PolicyRepo {
     this.db.prepare("UPDATE claims SET status = 'in review' WHERE id = 1").run();
   }
 
+  /** Add or replace a policy. Used by the demo setup tool to put YOUR phone number on a practice customer. */
+  upsertPolicy(p: Policy): void {
+    this.db
+      .prepare("INSERT OR REPLACE INTO policies VALUES (?,?,?,?,?,?,?,?,?)")
+      .run(p.policyNumber, p.holderName, p.dob, p.phone, p.product, p.status, p.premiumCents, p.balanceCents, p.nextDue);
+  }
+
+  /** Remove a policy (demo cleanup only). */
+  removePolicy(policyNumber: string): void {
+    this.db.prepare("DELETE FROM policies WHERE policy_number = ?").run(policyNumber);
+  }
+
   private toPolicy(r: Row): Policy {
     return {
       policyNumber: r.policy_number as string,

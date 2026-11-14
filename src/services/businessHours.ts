@@ -21,6 +21,13 @@ export const harborlineSchedule: Schedule = {
   holidays: ["2026-11-26", "2026-12-25", "2027-01-01"],
 };
 
+/** A DEMO schedule: open every day, all day (close is exclusive, so 24:00 covers 23:59). Loudly flagged at startup. */
+export const alwaysOpenSchedule: Schedule = {
+  timeZone: "America/New_York",
+  weekly: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, ["00:00", "24:00"] as [string, string]])),
+  holidays: [],
+};
+
 const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
 /** The local wall-clock parts of an instant in a time zone. DST is handled by Intl. */

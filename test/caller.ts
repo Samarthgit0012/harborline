@@ -36,6 +36,8 @@ let n = 0;
 export class Caller {
   callSid = `CA${String(++n).padStart(32, "0")}`;
   heard: string[] = [];
+  /** Every response body of this call, in order (for tests that check what was NEVER sent). */
+  rawLog: string[] = [];
   last = parseTwiml("");
   /** HTTP status of the most recent response (200 for TwiML, 204 for Twilio status callbacks). */
   status = 0;
@@ -55,7 +57,9 @@ export class Caller {
     });
     expect([200, 204]).toContain(res.status);
     this.status = res.status;
-    this.last = parseTwiml(await res.text());
+    const text = await res.text();
+    this.rawLog.push(text);
+    this.last = parseTwiml(text);
     this.heard.push(...this.last.says);
     return this;
   }

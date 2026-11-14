@@ -7,6 +7,8 @@ import type { SmsSender } from "../services/sms.js";
 import type { Schedule } from "../services/businessHours.js";
 import type { CallQueue } from "../services/queue.js";
 import type { OutboundStore } from "../outbound/store.js";
+import type { RecordingRegistry } from "../compliance/recordings.js";
+import type { RetentionDays } from "../compliance/retention.js";
 
 export const { VoiceResponse } = twilio.twiml;
 export type Twiml = InstanceType<typeof VoiceResponse>;
@@ -35,6 +37,10 @@ export interface SvcDeps {
   payLimiter: AttemptLimiter;
   /** Consent, do-not-call and campaign records (used here for the inbound "stop calling me" request). */
   outbound: OutboundStore;
+  /** Every recording we know about, with its deletion deadline. */
+  recordings: RecordingRegistry;
+  recordAgentCalls: boolean;
+  retentionDays: RetentionDays;
 }
 
 export const send = (res: Response, t: Twiml) => res.type("text/xml").send(t.toString());

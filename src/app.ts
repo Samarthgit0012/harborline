@@ -12,6 +12,9 @@ import { SqliteRepo, type PolicyRepo } from "./services/policyRepo.js";
 import { AttemptLimiter } from "./services/rateLimiter.js";
 import { CallQueue } from "./services/queue.js";
 import { OutboundStore } from "./outbound/store.js";
+import { RecordingRegistry } from "./compliance/recordings.js";
+import { recordingRouter } from "./compliance/routes.js";
+import { DEFAULT_RETENTION_DAYS } from "./compliance/retention.js";
 import { outboundRouter } from "./outbound/routes.js";
 import { ConsoleSms, TwilioSms, type SmsSender } from "./services/sms.js";
 import { serviceRouter } from "./svc/router.js";
@@ -30,6 +33,7 @@ export interface Deps {
   ticketLimiter?: AttemptLimiter;
   payLimiter?: AttemptLimiter;
   outbound?: OutboundStore;
+  recordings?: RecordingRegistry;
 }
 
 /** Twilio sends SpeechResult (text) and Confidence ("0.0"-"1.0", not guaranteed) when speech was used. */
@@ -52,6 +56,8 @@ export function createApp(config: Config, deps: Deps = {}) {
   // At most 3 card payment attempts per policy and per calling number per hour.
   const payLimiter = deps.payLimiter ?? new AttemptLimiter(3, 60 * 60 * 1000, () => clock().getTime());
   const outbound = deps.outbound ?? new OutboundStore(config.dbPath ?? ":memory:");
+  const recordings = deps.recordings ?? new RecordingRegistry(config.dbPath ?? ":memory:");
+  const retentionDays = config.retentionDays ?? DEFAULT_RETENTION_DAYS;
   const sms =
     deps.sms ??
     (config.twilioAccountSid && config.twilioFromNumber
@@ -83,10 +89,13 @@ export function createApp(config: Config, deps: Deps = {}) {
   });
 
   // Code-driven services: authentication, account read-backs, claim intake.
-  app.use("/svc", serviceRouter({ repo, state, limiter, sms, clock, schedule, agentNumber: config.agentNumber, queue, ticketLimiter, holdMusicUrl: config.holdMusicUrl, payEnabled: !!config.payEnabled, payConnector: config.payConnector, publicBaseUrl: config.publicBaseUrl, payLimiter, outbound }));
+  app.use("/svc", serviceRouter({ repo, state, limiter, sms, clock, schedule, agentNumber: config.agentNumber, queue, ticketLimiter, holdMusicUrl: config.holdMusicUrl, payEnabled: !!config.payEnabled, payConnector: config.payConnector, publicBaseUrl: config.publicBaseUrl, payLimiter, outbound, recordings, recordAgentCalls: !!config.recordAgentCalls, retentionDays }));
 
   // Webhooks for calls WE place (campaigns). Same signature check as everything else; refuses unless OUTBOUND_MODE is on.
   app.use("/outbound", outboundRouter({ store: outbound, state, clock, mode: config.outboundMode ?? "off", callback: config.outboundCallback }));
+
+  // Twilio tells us when a recording is ready (or absent). Signed like everything else.
+  app.use("/rec", recordingRouter({ registry: recordings, state, clock, retentionDays }));
 
   // The caller is (re)entering a node, e.g. after a Redirect.
   app.post("/ivr/:nodeId", (req, res) => {

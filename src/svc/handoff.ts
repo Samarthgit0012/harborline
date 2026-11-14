@@ -27,6 +27,12 @@ export function mountHandoff(r: Router, d: SvcDeps) {
     return { ...info, from: d.state.get(info.callSid).contactPhone ?? info.from };
   };
 
+  /** The reason carried between steps of the handoff, restricted to the values we know. */
+  const reasonOf = (req: Request): string => {
+    const v = req.query.reason;
+    return v === "claim_injury" || v === "campaign_response" ? v : "general";
+  };
+
   /** The caller wants a person. Decide: no agent line, after hours, or into the line. */
   r.post("/handoff", (req, res) => {
     const { callSid } = callInfo(req);
@@ -40,6 +46,11 @@ export function mountHandoff(r: Router, d: SvcDeps) {
       redirect(t, svcUrl("voicemail", { back: back(req) }));
     } else {
       const s = d.state.get(callSid);
+      // If agent calls are recorded, tell the caller FIRST and offer to decline, before they join the line.
+      if (d.recordAgentCalls && !s.recordingChoice) {
+        redirect(t, h("rec", { reason: reasonOf(req), back: back(req) }));
+        return send(res, t);
+      }
       const injury = req.query.reason === "claim_injury";
       const reason = injury ? "claim_injury" : req.query.reason === "campaign_response" ? "campaign_response" : "general";
       const policy = s.authedPolicy ?? s.fnol?.policyNumber;
@@ -62,11 +73,38 @@ export function mountHandoff(r: Router, d: SvcDeps) {
     send(res, t);
   });
 
+  /**
+   * The recording notice. Silence or any key except 2 means "continue": the caller was told, and went on (implied
+   * consent). Pressing 2 declines. Whether implied consent is enough is a question for the client's lawyer, because
+   * some states need everyone's consent (Lesson 12). The choice is stored, and recording follows it.
+   */
+  r.post("/handoff/rec", (req, res) => {
+    const t = new VoiceResponse();
+    ask(t, {
+      action: h("rec/in", { reason: reasonOf(req), back: back(req) }),
+      numDigits: 1,
+      timeout: 4,
+      prompt: "This call may be recorded for quality and training. To continue, stay on the line. If you do not want it recorded, press 2.",
+    });
+    send(res, t);
+  });
+
+  r.post("/handoff/rec/in", (req, res) => {
+    const { callSid, digits } = callInfo(req);
+    const t = new VoiceResponse();
+    const declined = digits === "2";
+    d.state.update(callSid, { recordingChoice: declined ? "declined" : "recorded" });
+    log("info", "recording_choice", { callSid, choice: declined ? "declined" : "recorded" });
+    if (declined) t.say("Okay. This call will not be recorded.");
+    redirect(t, svcUrl("handoff", { reason: reasonOf(req), back: back(req) }));
+    send(res, t);
+  });
+
   /** One pass of the hold loop: connect if it is our turn, otherwise say where we are and wait. */
   r.post("/handoff/hold", (req, res) => {
     const { callSid } = callInfo(req);
     const t = new VoiceResponse();
-    const { handoff: ctx, handoffState } = d.state.get(callSid);
+    const { handoff: ctx, handoffState, recordingChoice } = d.state.get(callSid);
 
     if (!ctx || handoffState !== "waiting") {
       // Nobody put this call in the line, or it already left (connected, called back, timed out): a replayed or forged request.
@@ -92,7 +130,14 @@ export function mountHandoff(r: Router, d: SvcDeps) {
       log("info", "queue_connect", { callSid, ...d.queue.stats.summary() });
       t.say("Please hold while I connect you.");
       // answerOnBridge: the caller keeps hearing ringing, not silence, while the agent's phone rings and the whisper plays.
-      const dial = t.dial({ timeout: 25, action: h("dialdone"), method: POST, answerOnBridge: true });
+      // Record only if this deployment records agent calls AND the caller was told and did not decline (no choice on file = no recording).
+      const recording = d.recordAgentCalls && recordingChoice === "recorded";
+      const dial = t.dial({
+        timeout: 25, action: h("dialdone"), method: POST, answerOnBridge: true,
+        ...(recording
+          ? { record: "record-from-answer-dual" as const, recordingStatusCallback: `${d.publicBaseUrl}/rec/status?kind=agent_call`, recordingStatusCallbackMethod: POST, recordingStatusCallbackEvent: ["completed", "absent"] }
+          : {}),
+      });
       dial.number({ url: h("whisper", { c: callSid }), method: POST }, d.agentNumber!);
     } else {
       const pos = d.queue.position(callSid);
@@ -285,9 +330,12 @@ export function mountHandoff(r: Router, d: SvcDeps) {
     } else {
       t.say(
         `Please leave your name, your phone number and a short message after the beep. Your reference number is ${speakDigits(made.ticketNumber)}. ` +
-          "Please do not say any card numbers. Press pound when you are finished.",
+          "This message will be recorded. Please do not say any card numbers. Press pound when you are finished.",
       );
-      t.record({ action: svcUrl("voicemail/done"), method: POST, maxLength: 120, finishOnKey: "#", playBeep: true });
+      t.record({
+        action: svcUrl("voicemail/done"), method: POST, maxLength: 120, finishOnKey: "#", playBeep: true,
+        recordingStatusCallback: `${d.publicBaseUrl}/rec/status?kind=voicemail`, recordingStatusCallbackMethod: POST, recordingStatusCallbackEvent: ["completed", "absent"],
+      });
       redirect(t, svcUrl("voicemail/done")); // reached only if nothing was recorded
     }
     send(res, t);
@@ -300,6 +348,7 @@ export function mountHandoff(r: Router, d: SvcDeps) {
     const t = new VoiceResponse();
     if (s.ticketNumber && /^RE\w{10,40}$/.test(sid)) {
       d.repo.attachTicketRecording(s.ticketNumber, sid);
+      d.recordings.register({ sid, kind: "voicemail", ref: s.ticketNumber, callSid, consentBasis: "announced_before_record", retainDays: d.retentionDays.voicemail }, d.clock());
       log("info", "voicemail_attached", { callSid, ticketNumber: s.ticketNumber });
     }
     t.say("Thank you. Your message has been saved and an agent will call you back during business hours. Goodbye.");

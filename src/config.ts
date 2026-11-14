@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { DEFAULT_RETENTION_DAYS, type RetentionDays } from "./compliance/retention.js";
 
 export interface Config {
   authToken: string;
@@ -25,6 +26,12 @@ export interface Config {
   outboundFrom?: string;
   /** The number a recipient can call to ask us to stop (E.164). Spoken in every outbound message. Required for live mode. */
   outboundCallback?: string;
+  /** Record calls that are connected to an agent (after announcing it and offering to decline). Off by default. */
+  recordAgentCalls?: boolean;
+  /** How many days each kind of recording is kept before the retention job deletes it. */
+  retentionDays?: RetentionDays;
+  /** "dry-run" (default) only reports what the retention job would delete; "live" really deletes at Twilio. */
+  retentionMode?: "dry-run" | "live";
 }
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -85,6 +92,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (!publicBaseUrl.startsWith("https://")) throw new Error("OUTBOUND_MODE=live needs an https PUBLIC_BASE_URL");
   }
 
+  const retentionDays: RetentionDays = { ...DEFAULT_RETENTION_DAYS };
+  for (const [kind, name] of [["voicemail", "RETENTION_VOICEMAIL_DAYS"], ["agent_call", "RETENTION_AGENT_CALL_DAYS"], ["claim_description", "RETENTION_CLAIM_DAYS"], ["unknown", "RETENTION_UNKNOWN_DAYS"]] as const) {
+    const v = env[name];
+    if (v === undefined || v === "") continue;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 1 || n > 3650) throw new Error(`${name} must be a whole number of days from 1 to 3650`);
+    retentionDays[kind] = n;
+  }
+  const retentionMode = (env.RETENTION_MODE || "dry-run") as "dry-run" | "live";
+  if (!["dry-run", "live"].includes(retentionMode)) throw new Error('RETENTION_MODE must be "dry-run" or "live"');
+  if (retentionMode === "live" && !env.TWILIO_ACCOUNT_SID) throw new Error("RETENTION_MODE=live needs TWILIO_ACCOUNT_SID");
+
   return {
     authToken,
     publicBaseUrl,
@@ -100,5 +119,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     outboundMode,
     outboundFrom,
     outboundCallback,
+    recordAgentCalls: env.RECORD_AGENT_CALLS === "true",
+    retentionDays,
+    retentionMode,
   };
 }

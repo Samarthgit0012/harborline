@@ -51,6 +51,8 @@ export interface Session {
   paymentNumber?: string;
   /** For an OUTBOUND call: the person we rang (our own number is the call's "From", so we remember theirs here). */
   contactPhone?: string;
+  /** Agent-call recording: "recorded" = told it may be recorded and did not decline; "declined" = pressed 2. */
+  recordingChoice?: "recorded" | "declined";
 }
 
 export class MemoryStateStore implements StateStore {

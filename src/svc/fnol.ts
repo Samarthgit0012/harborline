@@ -185,6 +185,10 @@ export function mountFnol(r: Router, d: SvcDeps) {
       maxLength: 120,
       finishOnKey: "#",
       playBeep: true,
+      // Twilio says the file may not be ready when the action fires; this tells us when it is (Lesson 12).
+      recordingStatusCallback: `${d.publicBaseUrl}/rec/status?kind=claim_description`,
+      recordingStatusCallbackMethod: "POST",
+      recordingStatusCallbackEvent: ["completed", "absent"],
     });
     redirect(t, step("fnol/recorded", back)); // reached only if nothing was recorded
     send(res, t);
@@ -197,6 +201,8 @@ export function mountFnol(r: Router, d: SvcDeps) {
     const t = new VoiceResponse();
     if (s.claimNumber && /^RE\w{10,40}$/.test(sid)) {
       d.repo.attachRecording(s.claimNumber, sid);
+      // The register is what the retention job works from: kind, owner, why we could record, and when it must go.
+      d.recordings.register({ sid, kind: "claim_description", ref: s.claimNumber, callSid, consentBasis: "announced_before_record", retainDays: d.retentionDays.claim_description }, d.clock());
       log("info", "claim_recording_attached", { callSid, claimNumber: s.claimNumber });
     }
     t.say("Thank you. Your claim has been recorded, and an adjuster will contact you at the number you called from.");

@@ -1,5 +1,11 @@
 import type { Action, Flow } from "./types.js";
 
+/**
+ * Services that always END the caller's journey (connect to a person, take a message, hang up) and never
+ * hand them back to a menu. Only these may be the last step of an onGiveUp.
+ */
+export const TERMINAL_SERVICES = new Set(["handoff", "voicemail"]);
+
 /** Every node a given action can send the call to. */
 export function gotoTargets(a: Action): string[] {
   switch (a.type) {
@@ -39,7 +45,7 @@ export function reachesEnd(flow: Flow, a: Action, seen = new Set<string>()): boo
       return reachesEnd(flow, target.action, new Set(seen).add(a.node));
     }
     case "service":
-      return false; // a service returns the caller to the flow, so it does not end the call
+      return TERMINAL_SERVICES.has(a.name); // most services return the caller to the flow; these never do
   }
 }
 

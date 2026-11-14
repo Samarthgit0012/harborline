@@ -72,7 +72,12 @@ for (let step = 0; step < 60; step++) {
   } else if (t.redirect) {
     ({ path, xml } = await post(t.redirect));
   } else if (t.dial) {
-    console.log(`  [call transfers to ${t.dial}]`);
+    console.log(`  [call rings the agent line ${t.dial}]`);
+    if (t.whisperUrl) {
+      // Twilio fetches this on the AGENT's leg after they answer, before the caller is connected.
+      const w = await post(t.whisperUrl, { CallSid: "CA" + "e".repeat(32) });
+      for (const s of parseTwiml(w.xml).says) console.log(`  AGENT HEARS (whisper): ${s}`);
+    }
     break;
   } else {
     console.log(t.hangup ? "  [call ends]" : "  [response had nothing to do]");

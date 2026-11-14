@@ -201,11 +201,12 @@ export function mountFnol(r: Router, d: SvcDeps) {
     }
     t.say("Thank you. Your claim has been recorded, and an adjuster will contact you at the number you called from.");
 
-    // Urgent claim and someone is here to take it: hand over now. After hours it waits for a callback.
+    // Urgent claim and someone is here to take it: hand over now, ahead of everyone else in the line.
+    // After hours it waits for a callback.
     const urgent = s.fnol?.injuries === "yes";
     if (urgent && d.agentNumber && isOpen(d.clock(), d.schedule)) {
       t.say("Because someone was injured, I am connecting you to an agent now.");
-      t.dial(d.agentNumber);
+      redirect(t, svcUrl("handoff", { reason: "claim_injury", back }));
     } else {
       redirect(t, `/ivr/${back}`);
     }

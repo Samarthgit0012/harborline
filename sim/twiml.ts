@@ -14,6 +14,12 @@ export interface ParsedTwiml {
   /** <Record action=...>: the caller is asked to leave a voice message. */
   recordAction?: string;
   dial?: string;
+  /** <Dial action=...>: where Twilio reports how the dialled call ended. */
+  dialAction?: string;
+  /** <Number url=...>: TwiML played privately to the person we dial, before the caller is bridged (the whisper). */
+  whisperUrl?: string;
+  /** <Play> inside the prompt (hold music). */
+  playUrl?: string;
   hangup: boolean;
 }
 
@@ -35,7 +41,10 @@ export function parseTwiml(xml: string): ParsedTwiml {
     gatherSpeechTimeout: pick(xml, /<Gather[^>]*\sspeechTimeout="([^"]+)"/),
     redirect: pick(xml, /<Redirect[^>]*>([^<]+)<\/Redirect>/),
     recordAction: pick(xml, /<Record[^>]*\saction="([^"]+)"/),
-    dial: xml.match(/<Dial[^>]*>([^<]+)<\/Dial>/)?.[1],
+    dial: xml.match(/<Dial[^>]*>(?:<Number[^>]*>)?([^<]+)(?:<\/Number>)?<\/Dial>/)?.[1],
+    dialAction: pick(xml, /<Dial[^>]*\saction="([^"]+)"/),
+    whisperUrl: pick(xml, /<Number[^>]*\surl="([^"]+)"/),
+    playUrl: pick(xml, /<Play[^>]*>([^<]+)<\/Play>/),
     hangup: /<Hangup\s*\/>/.test(xml),
   };
 }

@@ -13,6 +13,8 @@ export interface Config {
   /** Needed to send real texts (ID card). Without both, texts are skipped and only logged. */
   twilioAccountSid?: string;
   twilioFromNumber?: string;
+  /** https URL of hold music (an mp3 or wav you host). Optional. */
+  holdMusicUrl?: string;
 }
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -39,6 +41,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`TWILIO_FROM_NUMBER must be E.164 like +15551234567 (got "${twilioFromNumber}")`);
   }
 
+  const holdMusicUrl = env.HOLD_MUSIC_URL || undefined;
+  if (holdMusicUrl) {
+    let ok = false;
+    try {
+      ok = new URL(holdMusicUrl).protocol === "https:";
+    } catch {
+      /* not a URL */
+    }
+    if (!ok) throw new Error("HOLD_MUSIC_URL must be an https URL to an audio file");
+  }
+
   return {
     authToken,
     publicBaseUrl,
@@ -48,5 +61,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: env.DB_PATH || "data/harborline.db",
     twilioAccountSid: env.TWILIO_ACCOUNT_SID || undefined,
     twilioFromNumber,
+    holdMusicUrl,
   };
 }

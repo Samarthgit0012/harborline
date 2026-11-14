@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import twilio from "twilio";
@@ -17,12 +17,12 @@ let server: Server;
 let base: string;
 let now = OPEN;
 
-beforeAll(async () => {
+beforeEach(async () => {
   server = createApp(config, { clock: () => now, state: new MemoryStateStore() }).listen(0);
   await new Promise((r) => server.once("listening", r));
   base = `http://localhost:${(server.address() as AddressInfo).port}`;
 });
-afterAll(() => new Promise((r) => server.close(r)));
+afterEach(() => new Promise((r) => server.close(r)));
 
 let n = 0;
 /** A simulated caller: signs every request, follows the engine's own redirects. */
@@ -77,7 +77,7 @@ describe("business hours routing", () => {
     expect(c.last.says[0]).toContain("For policy questions, press 1");
   });
 
-  it("closed: says it is closed and offers only the claims option, which starts claim intake", async () => {
+  it("closed: says it is closed and offers only a message and the claims option (no agent)", async () => {
     now = CLOSED;
     const c = await new Caller().dial();
     expect(c.hearsAll).toContain("closed right now");

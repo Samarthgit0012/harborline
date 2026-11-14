@@ -10,6 +10,7 @@ import { parseConfidence } from "./services/intent.js";
 import { harborlineSchedule, isOpen, type Schedule } from "./services/businessHours.js";
 import { SqliteRepo, type PolicyRepo } from "./services/policyRepo.js";
 import { AttemptLimiter } from "./services/rateLimiter.js";
+import { CallQueue } from "./services/queue.js";
 import { ConsoleSms, TwilioSms, type SmsSender } from "./services/sms.js";
 import { serviceRouter } from "./svc/router.js";
 import { log, maskPhone } from "./log.js";
@@ -23,6 +24,8 @@ export interface Deps {
   repo?: PolicyRepo;
   limiter?: AttemptLimiter;
   sms?: SmsSender;
+  queue?: CallQueue;
+  ticketLimiter?: AttemptLimiter;
 }
 
 /** Twilio sends SpeechResult (text) and Confidence ("0.0"-"1.0", not guaranteed) when speech was used. */
@@ -39,6 +42,9 @@ export function createApp(config: Config, deps: Deps = {}) {
   const clock = deps.clock ?? (config.nowOverride ? () => config.nowOverride! : () => new Date());
   const repo = deps.repo ?? new SqliteRepo(config.dbPath ?? ":memory:");
   const limiter = deps.limiter ?? new AttemptLimiter(5, 30 * 60 * 1000, () => clock().getTime());
+  const queue = deps.queue ?? new CallQueue(() => clock().getTime());
+  // At most 3 call back / voicemail requests per number per hour.
+  const ticketLimiter = deps.ticketLimiter ?? new AttemptLimiter(3, 60 * 60 * 1000, () => clock().getTime());
   const sms =
     deps.sms ??
     (config.twilioAccountSid && config.twilioFromNumber
@@ -70,7 +76,7 @@ export function createApp(config: Config, deps: Deps = {}) {
   });
 
   // Code-driven services: authentication, account read-backs, claim intake.
-  app.use("/svc", serviceRouter({ repo, state, limiter, sms, clock, schedule, agentNumber: config.agentNumber }));
+  app.use("/svc", serviceRouter({ repo, state, limiter, sms, clock, schedule, agentNumber: config.agentNumber, queue, ticketLimiter, holdMusicUrl: config.holdMusicUrl }));
 
   // The caller is (re)entering a node, e.g. after a Redirect.
   app.post("/ivr/:nodeId", (req, res) => {

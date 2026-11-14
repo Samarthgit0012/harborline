@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildHarborlineFlow } from "../src/flows/harborline.js";
+import { SERVICE_NAMES, buildHarborlineFlow } from "../src/flows/harborline.js";
 import { validateFlow } from "../src/flows/validate.js";
 import type { Flow, MenuNode } from "../src/flows/types.js";
 import {
@@ -112,7 +112,7 @@ describe("flow validation of speech", () => {
   const speechOf = (f: Flow) => (f.nodes.m as MenuNode).speech!;
 
   it("accepts the Harborline flow and a minimal speech flow", () => {
-    expect(validateFlow(flow, ["policy", "billing", "claimstatus", "fnol"])).toEqual([]);
+    expect(validateFlow(flow, SERVICE_NAMES)).toEqual([]);
     expect(validateFlow(base())).toEqual([]);
   });
   it("rejects a spoken action that goes to a node that does not exist", () => {

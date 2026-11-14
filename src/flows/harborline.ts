@@ -1,7 +1,7 @@
 import type { Action, Flow } from "./types.js";
 
 /** Code-driven services the flow may hand a call to (see src/svc). The server validates against this. */
-export const SERVICE_NAMES = ["policy", "billing", "claimstatus", "fnol"];
+export const SERVICE_NAMES = ["policy", "billing", "claimstatus", "fnol", "handoff", "voicemail"];
 
 export interface FlowOptions {
   /** Where "speak to an agent" rings. If absent, callers are told no agent is available. */
@@ -140,8 +140,9 @@ export function buildHarborlineFlow(opts: FlowOptions = {}): Flow {
       closedClaims: { kind: "action", action: { type: "service", name: "fnol", back: "closed" } },
       agent: {
         kind: "action",
+        // A person is wanted: the handoff service queues the call, whispers context to the agent, and offers a call back.
         action: opts.agentNumber
-          ? { type: "say", text: "Please hold while I connect you.", then: { type: "transfer", to: opts.agentNumber } }
+          ? { type: "service", name: "handoff", back: "main" }
           : {
               type: "hangup",
               text: "Sorry, no agents are available right now. Please call back during business hours. Goodbye.",
@@ -151,9 +152,12 @@ export function buildHarborlineFlow(opts: FlowOptions = {}): Flow {
         kind: "menu",
         prompt:
           "Harborline Insurance is closed right now. Our hours are Monday to Friday, eight to six, " +
-          "and Saturday, nine to one, Eastern time. To report a claim, press 2. " +
+          "and Saturday, nine to one, Eastern time. To leave a message for a call back, press 1. To report a claim, press 2. " +
           "If this is an emergency, hang up and dial 9 1 1.",
-        options: { "2": { type: "goto", node: "closedClaims" } },
+        options: {
+          "1": { type: "service", name: "voicemail", back: "closed" },
+          "2": { type: "goto", node: "closedClaims" },
+        },
         maxRetries: 1,
         invalidPrompt: "Sorry, that is not a valid choice.",
         onGiveUp: { type: "hangup", text: "Please call back during business hours. Goodbye." },

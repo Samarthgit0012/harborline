@@ -5,6 +5,7 @@ import type { AttemptLimiter } from "../services/rateLimiter.js";
 import type { PolicyRepo } from "../services/policyRepo.js";
 import type { SmsSender } from "../services/sms.js";
 import type { Schedule } from "../services/businessHours.js";
+import type { CallQueue } from "../services/queue.js";
 
 export const { VoiceResponse } = twilio.twiml;
 export type Twiml = InstanceType<typeof VoiceResponse>;
@@ -18,6 +19,12 @@ export interface SvcDeps {
   clock: () => Date;
   schedule: Schedule;
   agentNumber?: string;
+  /** The waiting line for the agent. */
+  queue: CallQueue;
+  /** Caps call-back and voicemail requests per number (stops a prank or a loop from flooding the agents). */
+  ticketLimiter: AttemptLimiter;
+  /** Optional https URL of an audio file to play while callers wait. Without it they hear short pauses. */
+  holdMusicUrl?: string;
 }
 
 export const send = (res: Response, t: Twiml) => res.type("text/xml").send(t.toString());

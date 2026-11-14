@@ -85,6 +85,25 @@ export class Caller {
     await this.post(this.last.redirect!); // what Twilio does when the Gather or Record times out
     return this.settle();
   }
+  /** What the agent hears privately when they answer: fetched the way Twilio would, on the agent's own call leg. */
+  async whisper() {
+    const url = this.last.whisperUrl!;
+    const before = this.last;
+    await this.post(url, { CallSid: "CA" + "e".repeat(32) });
+    const heard = this.last.says.join(" ");
+    this.last = before; // the caller's own leg is unchanged
+    return heard;
+  }
+  /** Twilio reports the end of the <Dial> to its action URL, on the caller's own call. */
+  async dialDone(status: "completed" | "no-answer" | "busy" | "failed" | "canceled", duration = 0) {
+    await this.post(this.last.dialAction!, { DialCallStatus: status, DialCallDuration: String(duration) });
+    return this.settle();
+  }
+  /** One more pass of the hold loop (what Twilio does when the Gather times out and the Redirect runs). */
+  async holdAgain() {
+    await this.post(this.last.redirect!);
+    return this.settle();
+  }
   /** The caller finished leaving a voice message. */
   async record(recordingSid = "RE" + "a".repeat(32)) {
     await this.post(this.last.recordAction!, { RecordingSid: recordingSid, RecordingDuration: "12" });

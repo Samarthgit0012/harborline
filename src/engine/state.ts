@@ -1,3 +1,5 @@
+import type { HandoffContext } from "../services/queue.js";
+
 /**
  * Per-call state: how many times the caller failed each menu.
  * Each webhook is a separate HTTP request (Lesson 1), so retry counts must live somewhere keyed by CallSid.
@@ -39,6 +41,12 @@ export interface Session {
   speechMisses?: number;
   /** A guess waiting for the caller's yes/no. Stores the intent id only; the engine re-reads the flow. */
   speechPending?: { node: string; intent: string };
+  /** What the agent should know (and hear in the whisper). Set when the caller joins the agent line. */
+  handoff?: HandoffContext;
+  /** Where this call is in the agent line. Only a "waiting" call may be (re)joined to the line by a hold request. */
+  handoffState?: "waiting" | "connected" | "left";
+  /** Callback or voicemail ticket made during this call (so a replayed request cannot make a second one). */
+  ticketNumber?: string;
 }
 
 export class MemoryStateStore implements StateStore {

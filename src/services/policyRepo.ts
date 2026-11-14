@@ -44,6 +44,25 @@ export interface NewClaim {
   callbackPhone: string;
 }
 
+/** A request for a human to call the customer back: either "call me instead of making me wait" or a voicemail. */
+export interface Ticket {
+  ticketNumber: string;
+  kind: "callback" | "voicemail";
+  /** Where to call back (E.164 when we could parse it). Outbound calling rules apply: see Phase 7. */
+  phone: string;
+  reason: string;
+  /** Only set if the caller proved who they were. Otherwise an agent must verify before discussing anything. */
+  policyNumber: string | null;
+  policyVerified: boolean;
+  claimNumber: string | null;
+  urgent: boolean;
+  recordingSid: string | null;
+  status: "open" | "done";
+  createdAt: string;
+}
+
+export type NewTicket = Pick<Ticket, "kind" | "phone" | "reason" | "policyNumber" | "policyVerified" | "claimNumber" | "urgent">;
+
 /** The only door to customer data. A real client swaps this for their policy-admin system's API. */
 export interface PolicyRepo {
   findByPhone(phone: string): Policy[];
@@ -51,8 +70,12 @@ export interface PolicyRepo {
   claimsFor(policyNumber: string): Claim[];
   createClaim(input: NewClaim, now?: Date): Claim;
   attachRecording(claimNumber: string, recordingSid: string): void;
+  createTicket(input: NewTicket, now?: Date): Ticket;
+  attachTicketRecording(ticketNumber: string, recordingSid: string): void;
+  openTickets(): Ticket[];
 }
 
+const TICKET_BASE = 200000; // tickets are spoken as "2 0 0, 0 0 1"
 const CLAIM_BASE = 100000; // claim 1 is spoken as "1 0 0, 0 0 1": six digits is easy to write down
 type Row = Record<string, string | number | null>;
 
@@ -74,6 +97,11 @@ export class SqliteRepo implements PolicyRepo {
         id INTEGER PRIMARY KEY AUTOINCREMENT, policy_number TEXT, policy_verified INTEGER NOT NULL,
         status TEXT NOT NULL, loss_date TEXT, loss_type TEXT NOT NULL, injuries TEXT NOT NULL,
         urgent INTEGER NOT NULL, callback_phone TEXT NOT NULL, recording_sid TEXT, created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, phone TEXT NOT NULL, reason TEXT NOT NULL,
+        policy_number TEXT, policy_verified INTEGER NOT NULL, claim_number TEXT, urgent INTEGER NOT NULL,
+        recording_sid TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL
       );
     `);
     const count = this.db.prepare("SELECT COUNT(*) AS n FROM policies").get() as Row;
@@ -153,5 +181,39 @@ export class SqliteRepo implements PolicyRepo {
 
   attachRecording(claimNumber: string, recordingSid: string): void {
     this.db.prepare("UPDATE claims SET recording_sid = ? WHERE id = ?").run(recordingSid, Number(claimNumber) - CLAIM_BASE);
+  }
+
+  private toTicket(r: Row): Ticket {
+    return {
+      ticketNumber: String(TICKET_BASE + (r.id as number)),
+      kind: r.kind as Ticket["kind"],
+      phone: r.phone as string,
+      reason: r.reason as string,
+      policyNumber: r.policy_number as string | null,
+      policyVerified: r.policy_verified === 1,
+      claimNumber: r.claim_number as string | null,
+      urgent: r.urgent === 1,
+      recordingSid: r.recording_sid as string | null,
+      status: r.status as Ticket["status"],
+      createdAt: r.created_at as string,
+    };
+  }
+
+  createTicket(input: NewTicket, now: Date = new Date()): Ticket {
+    const res = this.db
+      .prepare(
+        `INSERT INTO tickets (kind, phone, reason, policy_number, policy_verified, claim_number, urgent, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(input.kind, input.phone, input.reason, input.policyNumber, input.policyVerified ? 1 : 0, input.claimNumber, input.urgent ? 1 : 0, "open", now.toISOString());
+    return this.toTicket(this.db.prepare("SELECT * FROM tickets WHERE id = ?").get(Number(res.lastInsertRowid)) as Row);
+  }
+
+  attachTicketRecording(ticketNumber: string, recordingSid: string): void {
+    this.db.prepare("UPDATE tickets SET recording_sid = ? WHERE id = ?").run(recordingSid, Number(ticketNumber) - TICKET_BASE);
+  }
+
+  openTickets(): Ticket[] {
+    return (this.db.prepare("SELECT * FROM tickets WHERE status = 'open' ORDER BY urgent DESC, id ASC").all() as Row[]).map((r) => this.toTicket(r));
   }
 }

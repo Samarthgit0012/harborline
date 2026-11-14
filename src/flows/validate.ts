@@ -73,7 +73,28 @@ export function validateFlow(flow: Flow, knownServices?: string[]): string[] {
           `menu "${id}": onGiveUp must end the call or transfer to a human, not loop back into the flow`,
         );
       }
-      targets = [...keys.flatMap((k) => gotoTargets(node.options[k])), ...gotoTargets(node.onGiveUp)];
+      const spoken = node.speech?.intents ?? [];
+      if (node.speech) {
+        if (spoken.length === 0) errors.push(`menu "${id}": speech is enabled but has no intents`);
+        const ids2 = new Set<string>();
+        let entries = 0;
+        for (const i of spoken) {
+          if (ids2.has(i.id)) errors.push(`menu "${id}": duplicate speech intent "${i.id}"`);
+          ids2.add(i.id);
+          if (i.phrases.length === 0) errors.push(`menu "${id}": intent "${i.id}" has no phrases`);
+          for (const p of i.phrases) {
+            entries++;
+            if (!p.trim() || p.length > 100) errors.push(`menu "${id}": intent "${i.id}" has an empty or over-100-character phrase`);
+          }
+        }
+        // Twilio accepts at most 500 hint entries per Gather.
+        if (entries > 500) errors.push(`menu "${id}": ${entries} speech phrases exceeds Twilio's 500 hints limit`);
+      }
+      targets = [
+        ...keys.flatMap((k) => gotoTargets(node.options[k])),
+        ...gotoTargets(node.onGiveUp),
+        ...spoken.flatMap((i) => gotoTargets(i.action)),
+      ];
     } else {
       targets = gotoTargets(node.action);
     }
@@ -81,7 +102,10 @@ export function validateFlow(flow: Flow, knownServices?: string[]): string[] {
       if (!flow.nodes[t]) errors.push(`node "${id}" goes to unknown node "${t}"`);
     }
     if (knownServices) {
-      const actions = node.kind === "menu" ? [...Object.values(node.options), node.onGiveUp] : [node.action];
+      const actions =
+        node.kind === "menu"
+          ? [...Object.values(node.options), node.onGiveUp, ...(node.speech?.intents.map((i) => i.action) ?? [])]
+          : [node.action];
       for (const name of actions.flatMap(serviceNames)) {
         if (!knownServices.includes(name)) errors.push(`node "${id}" uses unknown service "${name}"`);
       }

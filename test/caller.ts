@@ -74,6 +74,13 @@ export class Caller {
     await this.post(this.last.gatherAction!, { Digits: digits });
     return this.settle();
   }
+  /** Say something at the current prompt. confidence = what the recogniser reports ("" or undefined = none sent). */
+  async say(text: string, confidence?: number | string) {
+    const extra: Record<string, string> = { SpeechResult: text };
+    if (confidence !== undefined) extra.Confidence = String(confidence);
+    await this.post(this.last.gatherAction!, extra);
+    return this.settle();
+  }
   async silence() {
     await this.post(this.last.redirect!); // what Twilio does when the Gather or Record times out
     return this.settle();

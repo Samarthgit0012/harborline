@@ -16,9 +16,26 @@ export type Action =
    */
   | { type: "service"; name: string; back: string };
 
-/** Asks the caller to press a key. */
+/** Something a caller can SAY at a menu, mapped straight to an action (so speech can skip menu levels). */
+export interface SpeechIntent {
+  id: string;
+  /** Spoken back in the confirmation question: "Did you want <label>?" */
+  label: string;
+  /** Lowercase words/phrases that signal this intent. The longest phrase found in the utterance wins. */
+  phrases: string[];
+  action: Action;
+}
+
+export interface SpeechConfig {
+  /** Spoken before the keypad prompt, e.g. "In a few words, tell me what you need." */
+  intro: string;
+  intents: SpeechIntent[];
+}
+
+/** Asks the caller to press a key (and, if `speech` is set, also lets them say what they need). */
 export interface MenuNode {
   kind: "menu";
+  speech?: SpeechConfig;
   prompt: string;
   /** key ("0"-"9", "*", "#") -> action */
   options: Record<string, Action>;

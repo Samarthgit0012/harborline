@@ -2,6 +2,7 @@
 //   npm run call -- 1        press 1 at the first menu
 //   npm run call -- 9 -      press 9 (invalid), then stay silent ("-" = silence)
 //   npm run call -- - - -    silence three times (watch the give-up)
+//   npm run call -- "say:file a claim@0.93"   SAY something (@confidence is optional) instead of pressing a key
 //   npm run call -- 2 1 "" 11102026 1 2 rec     report a claim: claims, report, skip policy #, date,
 //                                               car accident, nobody hurt, then leave a recording ("rec")
 // Digits can be several at once (a date of birth is "03141985"). "" presses pound with nothing typed.
@@ -44,6 +45,16 @@ for (let step = 0; step < 60; step++) {
       console.log("  CALLER: (silence)");
       if (!t.redirect) break;
       ({ path, xml } = await post(t.redirect));
+    } else if (key.startsWith("say:")) {
+      const [text, conf] = key.slice(4).split("@");
+      if (!t.gatherInput?.includes("speech")) {
+        console.log(`  (CALLER says "${text}", but this prompt only listens for keys, so nothing is heard)`);
+        if (!t.redirect) break;
+        ({ path, xml } = await post(t.redirect));
+      } else {
+        console.log(`  CALLER says: "${text}"${conf ? ` (confidence ${conf})` : " (no confidence sent)"}`);
+        ({ path, xml } = await post(t.gatherAction, { SpeechResult: text, ...(conf ? { Confidence: conf } : {}) }));
+      }
     } else {
       console.log(`  CALLER presses ${key}`);
       ({ path, xml } = await post(t.gatherAction, { Digits: key }));

@@ -45,6 +45,65 @@ export function buildHarborlineFlow(opts: FlowOptions = {}): Flow {
           "4": { type: "goto", node: "quotes" },
           "0": toAgent,
         },
+        // Callers may also SAY what they need. Each intent maps straight to an action, so "file a claim"
+        // skips the claims submenu. Longest phrase wins ("file a claim" beats "claim"); equal-length ties are ambiguous.
+        speech: {
+          intro: "You can say what you need, like file a claim, or pay my bill. Or use your keypad.",
+          intents: [
+            {
+              id: "claim_new",
+              label: "to report a new claim",
+              phrases: [
+                "file a claim", "report a claim", "new claim", "make a claim", "start a claim", "open a claim",
+                "accident", "car accident", "crash", "collision", "someone hit me", "break in", "theft", "stolen",
+              ],
+              action: { type: "service", name: "fnol", back: "main" },
+            },
+            {
+              id: "claim_status",
+              label: "to check on a claim",
+              phrases: [
+                "claim status", "status of my claim", "check my claim", "existing claim", "my claim",
+                "where is my claim", "update on my claim",
+              ],
+              action: { type: "service", name: "claimstatus", back: "main" },
+            },
+            { id: "claims", label: "claims", phrases: ["claim", "claims"], action: { type: "goto", node: "claims" } },
+            {
+              id: "billing",
+              label: "billing",
+              phrases: [
+                "pay my bill", "pay bill", "make a payment", "billing", "bill", "payment", "balance",
+                "how much do i owe", "amount due", "premium",
+              ],
+              action: { type: "service", name: "billing", back: "main" },
+            },
+            {
+              id: "policy",
+              label: "policy questions",
+              phrases: [
+                "policy", "my policy", "coverage", "deductible", "policy information", "policy question",
+                "what am i covered for", "id card",
+              ],
+              action: { type: "service", name: "policy", back: "main" },
+            },
+            {
+              id: "quote",
+              label: "to get a quote",
+              phrases: ["quote", "new quote", "get a quote", "price", "new policy", "buy insurance", "sign up"],
+              action: { type: "goto", node: "quotes" },
+            },
+            {
+              id: "agent",
+              label: "to speak with an agent",
+              phrases: [
+                "agent", "representative", "a person", "human", "real person", "operator",
+                "talk to someone", "speak to someone", "speak with someone", "speak to an agent", "talk to an agent",
+              ],
+              action: toAgent,
+            },
+          ],
+        },
         maxRetries: 2,
         invalidPrompt: "Sorry, that is not a valid choice.",
         timeoutPrompt: "Sorry, I did not get your choice.",

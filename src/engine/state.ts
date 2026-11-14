@@ -35,6 +35,10 @@ export interface Session {
   fnol?: FnolDraft;
   /** Claim created during this call (so a redirect replay cannot create a second one). */
   claimNumber?: string;
+  /** Times speech failed this call (not understood, too unsure, or the caller said "no" to our guess). */
+  speechMisses?: number;
+  /** A guess waiting for the caller's yes/no. Stores the intent id only; the engine re-reads the flow. */
+  speechPending?: { node: string; intent: string };
 }
 
 export class MemoryStateStore implements StateStore {

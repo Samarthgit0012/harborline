@@ -3,6 +3,10 @@
 export interface ParsedTwiml {
   says: string[];
   gatherAction?: string;
+  /** <Gather input="...">: "dtmf" when absent (Twilio's default), or e.g. "dtmf speech". */
+  gatherInput?: string;
+  gatherHints?: string;
+  gatherSpeechTimeout?: string;
   /** Number of digits the Gather waits for (undefined = until finishOnKey or timeout). */
   gatherNumDigits?: number;
   /** Redirect target. If a Gather or Record is present, this is where the call goes when the caller is silent. */
@@ -26,6 +30,9 @@ export function parseTwiml(xml: string): ParsedTwiml {
     says: [...xml.matchAll(/<Say[^>]*>([\s\S]*?)<\/Say>/g)].map((m) => decode(m[1])),
     gatherAction: pick(xml, /<Gather[^>]*\saction="([^"]+)"/),
     gatherNumDigits: num ? Number(num) : undefined,
+    gatherInput: pick(xml, /<Gather[^>]*\sinput="([^"]+)"/),
+    gatherHints: pick(xml, /<Gather[^>]*\shints="([^"]*)"/),
+    gatherSpeechTimeout: pick(xml, /<Gather[^>]*\sspeechTimeout="([^"]+)"/),
     redirect: pick(xml, /<Redirect[^>]*>([^<]+)<\/Redirect>/),
     recordAction: pick(xml, /<Record[^>]*\saction="([^"]+)"/),
     dial: xml.match(/<Dial[^>]*>([^<]+)<\/Dial>/)?.[1],

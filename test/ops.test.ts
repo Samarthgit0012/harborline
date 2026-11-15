@@ -232,6 +232,17 @@ describe("practice customers from the environment", () => {
   });
 });
 
+describe("Dockerfile", () => {
+  it("gives the unprivileged user ownership of the data folder BEFORE switching to it (the bug Render's first deploy hit)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const lines = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8").split(/\r?\n/).filter((l) => !l.trim().startsWith("#"));
+    const chown = lines.findIndex((l) => /chown\s+node:node\s+\/app\/data/.test(l));
+    const user = lines.findIndex((l) => /^USER\s+node/.test(l));
+    expect(chown).toBeGreaterThan(-1);
+    expect(user).toBeGreaterThan(chown);
+  });
+});
+
 describe("request logging", () => {
   let srv: TestServer;
   afterEach(() => srv?.close());

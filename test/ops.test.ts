@@ -141,3 +141,78 @@ describe("international demo numbers", () => {
     }
   });
 });
+
+describe("calls Twilio places to the practice customer (demo:callme)", () => {
+  async function server() {
+    const { demoPolicies } = await import("../src/ops/demo.js");
+    const repo = new SqliteRepo(":memory:");
+    for (const p of demoPolicies({ customer: "+919876543210", dob: "1985-03-14" })) repo.upsertPolicy(p);
+    return startApp({ repo, clock: () => new Date("2026-11-17T15:00:00Z") }, { ...baseConfig, hoursMode: "always-open" });
+  }
+  it("treats the person we rang as the caller, so caller-ID login works", async () => {
+    const srv = await server();
+    try {
+      const c = new Caller(srv, "+919876543210");
+      c.placedFrom = "+12295456279"; // our own Twilio number is the call's From
+      await c.dial();
+      await c.press("3");
+      await c.press("03141985");
+      expect(c.hearsAll).toContain("Your balance is eighty-seven dollars and fifty cents");
+    } finally {
+      await srv.close();
+    }
+  });
+  it("our own number as the caller would NOT be recognised (what the fix prevents)", async () => {
+    const srv = await server();
+    try {
+      const c = await new Caller(srv, "+12295456279").dial(); // inbound call "from" our own number: not a customer
+      await c.press("3");
+      await c.press("03141985");
+      expect(c.hearsAll).not.toContain("eighty-seven dollars");
+    } finally {
+      await srv.close();
+    }
+  });
+  it("remoteParty picks From for inbound and To for calls we place", async () => {
+    const { remoteParty } = await import("../src/svc/helpers.js");
+    expect(remoteParty({ From: "+1", To: "+2" })).toBe("+1");
+    expect(remoteParty({ From: "+1", To: "+2", Direction: "inbound" })).toBe("+1");
+    expect(remoteParty({ From: "+1", To: "+2", Direction: "outbound-api" })).toBe("+2");
+    expect(remoteParty(undefined)).toBe("");
+  });
+});
+
+describe("request logging", () => {
+  let srv: TestServer;
+  afterEach(() => srv?.close());
+  it("logs the step, status and timing of every request, and never what the caller typed", async () => {
+    srv = await startApp({ clock: () => new Date("2026-11-17T15:00:00Z") });
+    const lines: string[] = [];
+    const orig = console.log;
+    console.log = (...a: unknown[]) => void lines.push(a.join(" "));
+    try {
+      const c = await new Caller(srv).dial();
+      await c.press("3");
+      await c.press("12345678"); // looks like a policy number
+    } finally {
+      console.log = orig;
+    }
+    const http = lines.filter((l) => l.includes('"msg":"http"')).map((l) => JSON.parse(l));
+    expect(http.map((h) => h.path)).toContain("/voice");
+    expect(http.every((h) => typeof h.status === "number" && typeof h.ms === "number")).toBe(true);
+    expect(http[0].call).toMatch(/^\d{6}$/);
+    expect(lines.join("\n")).not.toContain("12345678");
+  });
+  it("does not log health checks (they would drown the real calls)", async () => {
+    srv = await startApp();
+    const lines: string[] = [];
+    const orig = console.log;
+    console.log = (...a: unknown[]) => void lines.push(a.join(" "));
+    try {
+      await fetch(`${srv.base}/health`);
+    } finally {
+      console.log = orig;
+    }
+    expect(lines.filter((l) => l.includes('"msg":"http"'))).toEqual([]);
+  });
+});

@@ -41,6 +41,8 @@ export class Caller {
   last = parseTwiml("");
   /** HTTP status of the most recent response (200 for TwiML, 204 for Twilio status callbacks). */
   status = 0;
+  /** Set to our own number to simulate a call WE placed through the API (Twilio then sends From=us, To=the person). */
+  placedFrom?: string;
 
   constructor(
     private srv: TestServer,
@@ -48,7 +50,10 @@ export class Caller {
   ) {}
 
   async post(path: string, extra: Record<string, string> = {}) {
-    const params = { CallSid: this.callSid, From: this.from, ...extra };
+    const ends: Record<string, string> = this.placedFrom
+      ? { From: this.placedFrom, To: this.from, Direction: "outbound-api" }
+      : { From: this.from };
+    const params = { CallSid: this.callSid, ...ends, ...extra };
     const sig = twilio.getExpectedTwilioSignature(baseConfig.authToken, baseConfig.publicBaseUrl + path, params);
     const res = await fetch(this.srv.base + path, {
       method: "POST",

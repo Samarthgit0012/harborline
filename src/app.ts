@@ -18,6 +18,7 @@ import { DEFAULT_RETENTION_DAYS } from "./compliance/retention.js";
 import { outboundRouter } from "./outbound/routes.js";
 import { ConsoleSms, TwilioSms, type SmsSender } from "./services/sms.js";
 import { serviceRouter } from "./svc/router.js";
+import { remoteParty } from "./svc/helpers.js";
 import { log, maskPhone } from "./log.js";
 import { SERVICE_NAMES } from "./flows/harborline.js";
 
@@ -78,13 +79,24 @@ export function createApp(config: Config, deps: Deps = {}) {
 
   // Twilio sends application/x-www-form-urlencoded. Parse it, then verify the signature.
   app.use(express.urlencoded({ extended: false }));
+
+  // One line per request: which step, what we answered, how long it took, and the LAST SIX characters of the call ID
+  // (enough to follow one call). Never the body: that is where typed digits live.
+  app.use((req, res, next) => {
+    const started = Date.now();
+    res.on("finish", () => {
+      if (req.path === "/health") return;
+      log("info", "http", { method: req.method, path: req.path, status: res.statusCode, ms: Date.now() - started, call: String(req.body?.CallSid ?? "").slice(-6) || undefined });
+    });
+    next();
+  });
   app.use(twilioSignature(config.authToken, config.publicBaseUrl));
 
   // A new call arrives. Pick the entry point from the clock.
   app.post("/voice", (req, res) => {
     const callSid = req.body?.CallSid as string | undefined;
     const open = isOpen(clock(), schedule);
-    log("info", "call_started", { callSid, from: maskPhone(req.body?.From), open }); // masked: no full numbers in logs
+    log("info", "call_started", { callSid, from: maskPhone(remoteParty(req.body)), open }); // masked: no full numbers in logs
     send(res, renderNode(flow, open ? flow.start : flow.closedStart, { callSid: callSid ?? "", state }));
   });
 

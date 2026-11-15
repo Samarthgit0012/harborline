@@ -45,6 +45,16 @@ export interface SvcDeps {
 
 export const send = (res: Response, t: Twiml) => res.type("text/xml").send(t.toString());
 
+/**
+ * The PERSON on the call, whichever way it was placed. On an inbound call Twilio's "From" is the person. On a call WE
+ * place through the API ("outbound-api") "From" is our own number and the person is "To". Twilio signs these requests,
+ * so the direction can be trusted.
+ */
+export function remoteParty(body: Record<string, unknown> | undefined): string {
+  const raw = body?.Direction === "outbound-api" ? body?.To : body?.From;
+  return String(raw ?? "");
+}
+
 /** Facts about this webhook. Digits never leave this function except as the return value. */
 export function callInfo(req: Request) {
   const q = (name: string, fallback: string) => {
@@ -53,7 +63,7 @@ export function callInfo(req: Request) {
   };
   return {
     callSid: String(req.body?.CallSid ?? ""),
-    from: String(req.body?.From ?? ""),
+    from: remoteParty(req.body),
     /** Undefined means the caller was silent ("" and missing both mean no input). */
     digits: (req.body?.Digits as string | undefined) || undefined,
     back: q("back", "main"),

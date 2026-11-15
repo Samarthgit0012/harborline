@@ -1,9 +1,21 @@
 import { loadConfig } from "./config.js";
 import { createApp } from "./app.js";
-import { log } from "./log.js";
+import { log, maskPhone } from "./log.js";
 import { describeMode, startupWarnings } from "./ops/startup.js";
+import { demoPoliciesFromEnv } from "./ops/demo.js";
+import { SqliteRepo } from "./services/policyRepo.js";
 
 const config = loadConfig();
+
+// A freshly deployed server has an empty database. If DEMO_CUSTOMER is set, put the practice customers in (every start,
+// so a demo balance is back to its starting value). Phone numbers are never printed in full.
+const seeded = demoPoliciesFromEnv(process.env);
+if (seeded.length) {
+  const repo = new SqliteRepo(config.dbPath ?? "data/harborline.db");
+  for (const p of seeded) repo.upsertPolicy(p);
+  for (const p of seeded) log("info", "demo_customer_seeded", { policy: p.policyNumber, phone: maskPhone(p.phone) });
+}
+
 const server = createApp(config).listen(config.port, () => {
   console.log(`Harborline IVR listening on :${config.port}`);
   for (const line of describeMode(config)) console.log(`  ${line}`);

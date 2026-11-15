@@ -182,6 +182,56 @@ describe("calls Twilio places to the practice customer (demo:callme)", () => {
   });
 });
 
+describe("running on a host (Render)", () => {
+  it("uses the host's own address when PUBLIC_BASE_URL is not set, and PUBLIC_BASE_URL still wins", () => {
+    expect(loadConfig({ ...env, RENDER_EXTERNAL_URL: "https://harborline-ivr.onrender.com/" }).publicBaseUrl).toBe("https://harborline-ivr.onrender.com");
+    expect(loadConfig({ ...env, RENDER_EXTERNAL_URL: "https://harborline-ivr.onrender.com", PUBLIC_BASE_URL: "https://mine.example.com" }).publicBaseUrl).toBe("https://mine.example.com");
+    expect(loadConfig({ ...env, PUBLIC_BASE_URL: "" , RENDER_EXTERNAL_URL: "https://h.onrender.com" }).publicBaseUrl).toBe("https://h.onrender.com");
+    expect(loadConfig(env).publicBaseUrl).toBe("http://localhost:3000");
+  });
+  it("listens on the port the host assigns", () => {
+    expect(loadConfig({ ...env, PORT: "10000" }).port).toBe(10000);
+  });
+});
+
+describe("practice customers from the environment", () => {
+  it("seeds nothing unless DEMO_CUSTOMER is set", async () => {
+    const { demoPoliciesFromEnv } = await import("../src/ops/demo.js");
+    expect(demoPoliciesFromEnv({})).toEqual([]);
+    expect(demoPoliciesFromEnv({ DEMO_SECOND_CUSTOMER: "+919812345678" })).toEqual([]);
+  });
+  it("builds your customer, and a second one, with the default or a chosen date of birth", async () => {
+    const { demoPoliciesFromEnv } = await import("../src/ops/demo.js");
+    const two = demoPoliciesFromEnv({ DEMO_CUSTOMER: "+91 98765 43210", DEMO_SECOND_CUSTOMER: "+919812345678", DEMO_DOB: "07041990" });
+    expect(two.map((p) => [p.policyNumber, p.phone, p.dob])).toEqual([
+      ["90000001", "+919876543210", "1990-07-04"],
+      ["90000002", "+919812345678", "1990-07-04"],
+    ]);
+    expect(demoPoliciesFromEnv({ DEMO_CUSTOMER: "+919876543210" })[0].dob).toBe("1985-03-14");
+    expect(demoPoliciesFromEnv({ DEMO_CUSTOMER: "+919876543210" })).toHaveLength(1);
+  });
+  it("refuses bad values loudly instead of silently starting without a customer", async () => {
+    const { demoPoliciesFromEnv } = await import("../src/ops/demo.js");
+    expect(() => demoPoliciesFromEnv({ DEMO_CUSTOMER: "98765" })).toThrow(/DEMO_CUSTOMER/);
+    expect(() => demoPoliciesFromEnv({ DEMO_CUSTOMER: "+919876543210", DEMO_DOB: "13132000" })).toThrow(/DEMO_DOB/);
+    expect(() => demoPoliciesFromEnv({ DEMO_CUSTOMER: "+919876543210", DEMO_SECOND_CUSTOMER: "nope" })).toThrow(/DEMO_SECOND_CUSTOMER/);
+  });
+  it("a seeded customer can log in on a call (the whole point on a fresh host)", async () => {
+    const { demoPoliciesFromEnv } = await import("../src/ops/demo.js");
+    const repo = new SqliteRepo(":memory:");
+    for (const p of demoPoliciesFromEnv({ DEMO_CUSTOMER: "+919876543210" })) repo.upsertPolicy(p);
+    const srv = await startApp({ repo, clock: () => new Date("2026-11-17T15:00:00Z") }, { ...baseConfig, hoursMode: "always-open" });
+    try {
+      const c = await new Caller(srv, "+919876543210").dial();
+      await c.press("3");
+      await c.press("03141985");
+      expect(c.hearsAll).toContain("eighty-seven dollars and fifty cents");
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
 describe("request logging", () => {
   let srv: TestServer;
   afterEach(() => srv?.close());

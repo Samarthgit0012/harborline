@@ -1,0 +1,38 @@
+# Render "Blueprint": tells Render how to build and run Harborline. See DEMO.md, "Putting it on a host".
+# Secrets and personal numbers use `sync: false`: Render asks you for them in its dashboard and they are never stored in git.
+services:
+  - type: web
+    name: harborline-ivr
+    runtime: node
+    plan: starter            # a paid instance does not sleep (a free one does, and a sleeping server misses calls)
+    region: virginia         # close to Twilio's US servers
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    autoDeployTrigger: commit   # redeploy on every push to the connected branch (set to "off" to deploy by hand)
+    disk:                    # the practice database is a file; without a disk it is erased on every deploy
+      name: harborline-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION    # node:sqlite is built in from Node 24
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /var/data/harborline.db
+      - key: HOURS_MODE
+        value: always-open   # demo only: ignore business hours
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: AGENT_PHONE
+        sync: false
+      - key: DEMO_CUSTOMER          # your own phone: becomes practice customer 90000001
+        sync: false
+      - key: DEMO_SECOND_CUSTOMER   # optional second tester: practice customer 90000002
+        sync: false
+    # PUBLIC_BASE_URL is deliberately not set: Render gives the service its own address (RENDER_EXTERNAL_URL) and the server uses it.

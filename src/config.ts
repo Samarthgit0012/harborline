@@ -44,7 +44,9 @@ const E164 = /^\+[1-9]\d{6,14}$/;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const authToken = env.TWILIO_AUTH_TOKEN;
   if (!authToken) throw new Error("TWILIO_AUTH_TOKEN is required (see .env.example)");
-  const publicBaseUrl = (env.PUBLIC_BASE_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  // PUBLIC_BASE_URL wins. Failing that, Render tells every service its own public https address (RENDER_EXTERNAL_URL), so a
+  // deploy there needs no manual setting that could drift out of step with the real address.
+  const publicBaseUrl = (env.PUBLIC_BASE_URL || env.RENDER_EXTERNAL_URL || "http://localhost:3000").replace(/\/+$/, "");
 
   const agentNumber = env.AGENT_PHONE || undefined;
   if (agentNumber && !E164.test(agentNumber)) {

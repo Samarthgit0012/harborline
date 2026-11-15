@@ -106,7 +106,25 @@ npm run demo:setup -- --reset      # removes the demo customers (consent and do-
 ```
 The practice database is the single file `data/harborline.db`. Stop the server and delete that file to start completely fresh.
 
-## Beyond a demo: a stable address
+## Putting it on a host (Render): the laptop is no longer part of the demo
+
+`render.yaml` in this repo describes the whole service. About $7/month for the small always-on instance plus about $0.25/month for a 1 GB disk, from secondary sources: **check Render's pricing page before adding a card**.
+
+1. Push the code to GitHub (it is already there).
+2. In the Render dashboard: **New > Blueprint**, connect your GitHub account, pick this repository. Render reads `render.yaml`.
+3. Render asks for the values marked `sync: false`. Copy them from your own `.env` (never paste them anywhere else):
+   `TWILIO_AUTH_TOKEN`, `TWILIO_ACCOUNT_SID`, `TWILIO_PHONE_NUMBER`, `AGENT_PHONE`, `DEMO_CUSTOMER` (your phone), and optionally `DEMO_SECOND_CUSTOMER` (a tester's phone).
+4. Create it. The first build takes a few minutes. When it is live, `https://<your-service>.onrender.com/health` shows `{"ok":true}`.
+5. Point the Twilio number at it, from your laptop (once):
+   ```
+   PUBLIC_BASE_URL=https://<your-service>.onrender.com npm run twilio:setup -- --apply
+   ```
+   (PowerShell: `$env:PUBLIC_BASE_URL="https://<your-service>.onrender.com"; npm run twilio:setup -- --apply`)
+6. Call the number. In the Render dashboard, the service's **Logs** tab shows one line per request.
+
+Notes: the server uses Render's own address for signature checks (`RENDER_EXTERNAL_URL`), so you do not set `PUBLIC_BASE_URL` there. The demo customers are re-created at every start, so a balance is back to its starting value after a restart. Render runs Node 24 (`NODE_VERSION` in `render.yaml`); the project is developed on Node 26. A deploy restarts the server, which drops any call in progress.
+
+## Beyond a demo: other hosts
 
 A quick tunnel is fine for a demo and wrong for anything that must stay up. For a fixed address you need a host:
 

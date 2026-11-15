@@ -29,6 +29,25 @@ export function demoPolicies(opts: { customer: string; second?: string; dob: str
 }
 
 /**
+ * Practice customers described by environment variables, so a freshly deployed server (empty database) knows who you are.
+ *   DEMO_CUSTOMER=+919876543210   DEMO_SECOND_CUSTOMER=+919812345678   DEMO_DOB=03141985 (optional, MMDDYYYY)
+ * Nothing is seeded unless DEMO_CUSTOMER is set. A bad value stops the server from starting, loudly.
+ */
+export function demoPoliciesFromEnv(env: NodeJS.ProcessEnv, today?: Date): Policy[] {
+  if (!env.DEMO_CUSTOMER) return [];
+  const customer = normalizeE164(env.DEMO_CUSTOMER);
+  if (!customer) throw new Error("DEMO_CUSTOMER is not a valid phone number (use international form, like +919876543210)");
+  const dob = dobFromDigits(env.DEMO_DOB || "03141985");
+  if (!dob) throw new Error("DEMO_DOB must be a real date as MMDDYYYY, for example 03141985");
+  let second: string | undefined;
+  if (env.DEMO_SECOND_CUSTOMER) {
+    second = normalizeE164(env.DEMO_SECOND_CUSTOMER);
+    if (!second) throw new Error("DEMO_SECOND_CUSTOMER is not a valid phone number (use international form, like +919876543210)");
+  }
+  return demoPolicies({ customer, second, dob, today });
+}
+
+/**
  * Any real phone number in international form: "+91 98765 43210" -> "+919876543210". US numbers written without a
  * country code ("(555) 555-0100") are read as US. Returns undefined if it cannot be a dialable number.
  */

@@ -29,19 +29,18 @@ HOURS_MODE=always-open       # demo only: ignore business hours
 
 ## Each demo session
 
-1. **Start a tunnel** in terminal 1. The free Cloudflare "quick tunnel" needs no account (first time only: download `cloudflared.exe` into a `tools` folder; see "Getting the tunnel tool" below):
+1. **Start the tunnel** in terminal 1. It uses your fixed ngrok address from `PUBLIC_BASE_URL` in `.env` (one-time setup in "Getting the tunnel tool" below):
    ```
    npm run tunnel
    ```
-   It prints an address like `https://random-words.trycloudflare.com`. That address **changes every time** the tunnel starts, and a restart of the tunnel means repeating steps 2 to 4.
-2. **Start the server** in terminal 2, telling it that address (Twilio signs requests using it, so the server must know it):
+   The address does **not** change between restarts, so the Twilio number never needs re-pointing. (`npm run tunnel:quick` is the old throwaway Cloudflare tunnel: its address changes every start and a quick tunnel can die without warning.)
+2. **Start the server** in terminal 2. It reads the address from `.env`:
    ```
-   PUBLIC_BASE_URL=https://random-words.trycloudflare.com npm start
+   npm start
    ```
-   (Windows PowerShell: `$env:PUBLIC_BASE_URL="https://random-words.trycloudflare.com"; npm start`)
    Read the lines it prints: they say plainly what mode it is in, and any `!!` line is a problem.
-3. **Check the public address reaches it**: open `https://random-words.trycloudflare.com/health` in a browser. You should see `{"ok":true}`.
-4. **Point your Twilio number at it** (one command instead of clicking through the Console):
+3. **Check the public address reaches it**: open `https://your-domain.ngrok-free.dev/health` in a browser. You should see `{"ok":true}`.
+4. **Point your Twilio number at it** (once, and again only if the address ever changes):
    ```
    npm run twilio:setup             # shows what would change
    npm run twilio:setup -- --apply  # changes it
@@ -75,15 +74,24 @@ For extra scenes read the lesson for that phase (payments needs the test-mode se
 
 ### Getting the tunnel tool
 
-Download Cloudflare's official `cloudflared` for Windows from
+**ngrok (fixed address, free).** Each free ngrok account gets one fixed "dev domain" that survives restarts.
+1. Install: `winget install Ngrok.Ngrok`, then open a fresh terminal and run `ngrok update` (the winget copy can be old).
+2. Sign up at ngrok.com. In the dashboard, copy your dev domain (Domains page) and your authtoken (Your Authtoken page).
+3. Run `ngrok config add-authtoken <your token>` yourself. The token is stored in ngrok's own config file, not in this project.
+4. Put the domain in `.env`: `PUBLIC_BASE_URL=https://your-domain.ngrok-free.dev`
+
+**Quick tunnel (throwaway).** Download Cloudflare's official `cloudflared` for Windows from
 `https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe`
-and save it as `tools/cloudflared.exe` inside this project (the `tools` folder is git-ignored). Any other tunnel works too (for example ngrok, which needs a free account); all that matters is a public https address that forwards to port 3000.
+and save it as `tools/cloudflared.exe` (the `tools` folder is git-ignored). Its address changes every time, and then you start the server with `PUBLIC_BASE_URL=<that address>`. Any tunnel works: all that matters is a public https address that forwards to port 3000.
+
+**Trial accounts and callers.** On a Twilio trial account, Twilio rejects inbound calls from any number that is not a Verified Caller ID (error 21264), and `npm run demo:callme -- --to <number>` can only ring verified numbers. Verify each tester's phone first (Console > Verified Caller IDs).
 
 ## If something goes wrong
 
 | What you see | Most likely cause | Fix |
 |---|---|---|
-| Twilio says "application error" or the call drops right away | the server is not running, or the tunnel address changed | restart the tunnel, restart the server with the new address, run `npm run twilio:setup -- --apply` |
+| Twilio says "application error" or the call drops right away | the server or the tunnel is not running | restart `npm run tunnel` and `npm start` (with a quick tunnel the address also changes: re-run `npm run twilio:setup -- --apply`) |
+| A friend's call fails in 0 seconds and the Twilio log shows error 21264 | trial account: their phone is not a Verified Caller ID | verify it in the Console, or have Twilio ring them with `npm run demo:callme` (also needs it verified) |
 | The server log shows `signature_mismatch` (HTTP 403) | `PUBLIC_BASE_URL` does not exactly match the address Twilio calls | they must be identical, including `https://` and no trailing path |
 | You hear the "closed" menu | outside Mon-Fri 8-6 / Sat 9-1 Eastern | set `HOURS_MODE=always-open` for a demo |
 | "I could not verify that information" | the date of birth or number does not match the demo customer | run `npm run demo:setup -- --customer +1... --dob MMDDYYYY` with the number you are calling FROM |

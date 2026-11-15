@@ -27,6 +27,28 @@ HOURS_MODE=always-open       # demo only: ignore business hours
 # PUBLIC_BASE_URL is set per session (below), so you do not edit .env each time
 ```
 
+## Free practice: test every prompt without spending Twilio credit
+
+```
+npm run practice
+```
+
+A practice phone in your terminal. It runs the real call flow inside your own computer: no Twilio, no internet, no cost (it prints `Cost: $0.00` when you quit, and a test checks that it only ever talks to your own machine). Type what a caller would do at each prompt:
+
+| You type | What it does |
+|---|---|
+| `3` or `03141985` | presses those keys |
+| `#` | presses pound with nothing typed |
+| `say pay my bill` (or `say pay my bill@0.4` for a shaky recognition) | speaks |
+| `-` | stays silent until the prompt times out |
+| `rec` | leaves a voice message at a recording prompt |
+| `ok`, `star`, `fail`, `error` | at the card step, what Twilio reports |
+| `bye` | hangs up |
+
+Options: `-- --from +15555550101` (call as another sample customer), `-- --closed` (the after-hours menu), `-- --pay` (include the card option), `-- --logs` (show the server's own log lines). It lists the sample customers and their dates of birth when it starts. The practice data lives only for that session.
+
+**What it cannot show you:** how Twilio's voice *sounds*, how well it hears real speech, how the line behaves on a real phone network, or the trial notice. Use real calls (a few) for those. For scripted one-shot calls against a running server, `npm run call` still exists.
+
 ## Each demo session
 
 1. **Start the tunnel** in terminal 1. It uses your fixed ngrok address from `PUBLIC_BASE_URL` in `.env` (one-time setup in "Getting the tunnel tool" below):

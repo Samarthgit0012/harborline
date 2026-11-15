@@ -1,5 +1,10 @@
 import express from "express";
+import type { Server } from "node:http";
 import type { Config } from "./config.js";
+import { GeminiClient } from "./ai/gemini.js";
+import { attachRelay, type RelayDeps } from "./ai/relay.js";
+import { aiRouter } from "./ai/routes.js";
+import type { LlmClient } from "./ai/types.js";
 import { twilioSignature } from "./middleware/twilioSignature.js";
 import type { Flow } from "./flows/types.js";
 import { buildHarborlineFlow } from "./flows/harborline.js";
@@ -35,6 +40,10 @@ export interface Deps {
   payLimiter?: AttemptLimiter;
   outbound?: OutboundStore;
   recordings?: RecordingRegistry;
+  /** The AI model for the quote line. Tests pass a fake. Without it, one is built from the config (AI_MODE=on), or the line is off. */
+  llm?: LlmClient;
+  /** Tuning for the AI line's WebSocket (timeouts, session cap). Tests shorten these. */
+  relay?: Partial<Pick<RelayDeps, "maxSessions" | "idleMs" | "maxCallMs" | "modelTimeoutMs">>;
 }
 
 /** Twilio sends SpeechResult (text) and Confidence ("0.0"-"1.0", not guaranteed) when speech was used. */
@@ -64,6 +73,8 @@ export function createApp(config: Config, deps: Deps = {}) {
     (config.twilioAccountSid && config.twilioFromNumber
       ? new TwilioSms(config.twilioAccountSid, config.authToken, config.twilioFromNumber)
       : new ConsoleSms());
+
+  const llm = deps.llm ?? (config.aiMode === "on" && config.geminiApiKey ? new GeminiClient(config.geminiApiKey, config.geminiModel) : undefined);
 
   // Refuse to start with a broken flow: a dead end in production means a stranded caller.
   const problems = validateFlow(flow, SERVICE_NAMES);
@@ -101,7 +112,14 @@ export function createApp(config: Config, deps: Deps = {}) {
   });
 
   // Code-driven services: authentication, account read-backs, claim intake.
-  app.use("/svc", serviceRouter({ repo, state, limiter, sms, clock, schedule, agentNumber: config.agentNumber, queue, ticketLimiter, holdMusicUrl: config.holdMusicUrl, payEnabled: !!config.payEnabled, payConnector: config.payConnector, publicBaseUrl: config.publicBaseUrl, payLimiter, outbound, recordings, recordAgentCalls: !!config.recordAgentCalls, retentionDays }));
+  app.use("/svc", serviceRouter({ repo, state, limiter, sms, clock, schedule, agentNumber: config.agentNumber, queue, ticketLimiter, holdMusicUrl: config.holdMusicUrl, payEnabled: !!config.payEnabled, payConnector: config.payConnector, publicBaseUrl: config.publicBaseUrl, payLimiter, outbound, recordings, recordAgentCalls: !!config.recordAgentCalls, retentionDays, aiEnabled: !!llm }));
+
+  // The AI quote line: ordinary signed requests here, and a WebSocket attached to the HTTP server by `listen` below.
+  if (llm) {
+    app.use("/ai", aiRouter({ state, publicBaseUrl: config.publicBaseUrl }));
+    app.locals.attachRelay = (server: Server) =>
+      attachRelay(server, { authToken: config.authToken, publicBaseUrl: config.publicBaseUrl, state, repo, llm, clock, ...deps.relay });
+  }
 
   // Webhooks for calls WE place (campaigns). Same signature check as everything else; refuses unless OUTBOUND_MODE is on.
   app.use("/outbound", outboundRouter({ store: outbound, state, clock, mode: config.outboundMode ?? "off", callback: config.outboundCallback }));
@@ -139,4 +157,12 @@ export function createApp(config: Config, deps: Deps = {}) {
   });
 
   return app;
+}
+
+/** Start listening, and (if the AI quote line is on) accept its WebSocket on the same port. Use this instead of app.listen. */
+export function listen(app: express.Express, port: number, host?: string, onListening?: () => void): Server & { relay?: { sessions: () => number; close: () => void } } {
+  const server: Server & { relay?: { sessions: () => number; close: () => void } } = host ? app.listen(port, host, onListening) : app.listen(port, onListening);
+  const attach = app.locals.attachRelay as ((s: Server) => { sessions: () => number; close: () => void }) | undefined;
+  if (attach) server.relay = attach(server);
+  return server;
 }

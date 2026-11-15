@@ -13,6 +13,7 @@ export function describeMode(config: Config, env: NodeJS.ProcessEnv = process.en
   lines.push(`texts: ${config.twilioAccountSid && config.twilioFromNumber ? "real Twilio texts" : "logged only, nothing is sent"}`);
   lines.push(`card payments: ${config.payEnabled ? `on (connector ${config.payConnector ?? "Default"})` : "off"}`);
   lines.push(`outbound calling: ${config.outboundMode ?? "off"}`);
+  lines.push(`AI quote line: ${config.aiMode === "on" ? `ON (Gemini model ${config.geminiModel ?? "default"}); what callers say on it is sent to Google` : "off (callers who press 4 hear 'coming soon')"}`);
   lines.push(`recording agent calls: ${config.recordAgentCalls ? "ON (callers are told and can decline)" : "off"}`);
   lines.push(`recording retention: ${config.retentionMode ?? "dry-run"}`);
   return lines;
@@ -30,6 +31,7 @@ export function startupWarnings(config: Config, env: NodeJS.ProcessEnv = process
   if (env.NODE_ENV === "production" && env.NOW_OVERRIDE) w.push("NOW_OVERRIDE is set but ignored in production (by design).");
   if (!config.agentNumber) w.push("AGENT_PHONE is not set: 'speak to an agent' will not connect anyone.");
   if (config.outboundMode === "live") w.push("OUTBOUND_MODE=live: this server can place REAL outbound calls.");
+  if (config.aiMode === "on") w.push("AI_MODE=on: callers' words on the quote line go to Google's Gemini. A free AI Studio key lets Google use them to improve its products, so use a paid-tier key for real callers.");
   if (config.retentionMode === "live") w.push("RETENTION_MODE=live: the retention job will really delete recordings.");
   return w;
 }

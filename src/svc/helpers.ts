@@ -41,6 +41,8 @@ export interface SvcDeps {
   recordings: RecordingRegistry;
   recordAgentCalls: boolean;
   retentionDays: RetentionDays;
+  /** Is the AI quote line switched on (a model is configured)? */
+  aiEnabled: boolean;
 }
 
 export const send = (res: Response, t: Twiml) => res.type("text/xml").send(t.toString());

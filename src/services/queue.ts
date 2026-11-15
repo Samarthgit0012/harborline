@@ -15,9 +15,11 @@ import { speakDigits } from "./speak.js";
 
 /** What the IVR already knows about the caller, handed to the agent so they never have to re-ask. */
 export interface HandoffContext {
-  reason: "general" | "claim_injury" | "campaign_response";
-  /** Injury claim: goes to the front of the line. */
+  reason: "general" | "claim_injury" | "campaign_response" | "quote_request";
+  /** Injury claim (or a caller who said someone may be hurt): goes to the front of the line. */
   urgent: boolean;
+  /** Extra spoken context for the agent, built by our own code (the AI quote line puts what it collected here). */
+  note?: string;
   /** The caller proved who they are during THIS call (Lesson 6), not just "caller ID matched". */
   verified: boolean;
   policyLast4?: string;
@@ -195,7 +197,8 @@ export function whisperText(ctx: HandoffContext | undefined): string {
   if (!ctx) return "Harborline call. No details are available.";
   const parts = ["Harborline call."];
   if (ctx.reason === "campaign_response") parts.push("They are returning an outbound call from us.");
-  if (ctx.urgent) parts.push("Urgent. Injury claim.");
+  if (ctx.reason === "quote_request") parts.push("They were using the automated quote line.");
+  if (ctx.urgent) parts.push(ctx.reason === "claim_injury" ? "Urgent. Injury claim." : "Urgent. The caller said someone may be hurt.");
   if (ctx.verified) {
     parts.push(ctx.policyLast4 ? `Verified caller, policy ending ${speakDigits(ctx.policyLast4, 4)}.` : "Verified caller.");
   } else {
@@ -206,5 +209,6 @@ export function whisperText(ctx: HandoffContext | undefined): string {
     );
   }
   if (ctx.claimNumber) parts.push(`Claim ${speakDigits(ctx.claimNumber)} was just reported on this call.`);
+  if (ctx.note) parts.push(ctx.note);
   return parts.join(" ");
 }

@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit",
     "call": "tsx sim/call.ts",
     "practice": "tsx sim/practice.ts",
+    "ai:check": "tsx sim/ai-check.ts",
+    "practice:ai": "tsx sim/practice-ai.ts",
+    "ai:redteam": "tsx sim/ai-redteam.ts",
     "speech:eval": "tsx sim/speech-eval.ts",
     "payments:report": "tsx sim/payments-report.ts",
     "campaign": "tsx sim/campaign.ts",
@@ -32,11 +35,13 @@
   "dependencies": {
     "dotenv": "^18.0.10",
     "express": "^5.3.0",
-    "twilio": "^6.3.0"
+    "twilio": "^6.3.0",
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"

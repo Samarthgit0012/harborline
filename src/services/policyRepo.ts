@@ -64,6 +64,33 @@ export interface Ticket {
 export type NewTicket = Pick<Ticket, "kind" | "phone" | "reason" | "policyNumber" | "policyVerified" | "claimNumber" | "urgent">;
 
 /**
+ * A prospect from the AI quote line. A lead is NOT a customer: nothing here is checked against a policy, and every
+ * value passed the intake rules (src/ai/intake.ts) before it was stored. "partial" means the caller asked for a person
+ * (or the AI gave up) before every detail was collected.
+ */
+export interface Lead {
+  leadNumber: string;
+  phone: string;
+  fullName: string | null;
+  zipCode: string | null;
+  vehicleYear: string | null;
+  vehicleMake: string | null;
+  vehicleModel: string | null;
+  driverCount: string | null;
+  currentlyInsured: string | null;
+  status: "complete" | "partial";
+  transferred: boolean;
+  createdAt: string;
+}
+
+export interface NewLead {
+  phone: string;
+  values: Partial<Record<"full_name" | "zip_code" | "vehicle_year" | "vehicle_make" | "vehicle_model" | "driver_count" | "currently_insured", string>>;
+  complete: boolean;
+  transferred: boolean;
+}
+
+/**
  * One attempt to pay by card. Note what is NOT here: no card number, no expiry, no security code, no payment
  * token. Those live only with the payment processor. We keep the amount, what happened, and the processor's
  * confirmation code (a transaction reference, not card data) so a human can match it to the processor's records.
@@ -99,6 +126,9 @@ export interface PolicyRepo {
   createTicket(input: NewTicket, now?: Date): Ticket;
   attachTicketRecording(ticketNumber: string, recordingSid: string): void;
   openTickets(): Ticket[];
+  createLead(input: NewLead, now?: Date): Lead;
+  /** Newest first. */
+  leads(): Lead[];
   /** Record that a card payment is about to be attempted. Done BEFORE the caller types anything. */
   startPayment(policyNumber: string, amountCents: number, now?: Date): Payment;
   getPayment(paymentNumber: string): Payment | undefined;
@@ -117,6 +147,7 @@ export interface PolicyRepo {
 
 const PAYMENT_BASE = 300000; // payments are spoken as "3 0 0, 0 0 1"
 const TICKET_BASE = 200000; // tickets are spoken as "2 0 0, 0 0 1"
+const LEAD_BASE = 400000; // quote requests are spoken as "4 0 0, 0 0 1"
 const CLAIM_BASE = 100000; // claim 1 is spoken as "1 0 0, 0 0 1": six digits is easy to write down
 type Row = Record<string, string | number | null>;
 
@@ -149,6 +180,11 @@ export class SqliteRepo implements PolicyRepo {
         id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, phone TEXT NOT NULL, reason TEXT NOT NULL,
         policy_number TEXT, policy_verified INTEGER NOT NULL, claim_number TEXT, urgent INTEGER NOT NULL,
         recording_sid TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS leads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, full_name TEXT, zip_code TEXT, vehicle_year TEXT,
+        vehicle_make TEXT, vehicle_model TEXT, driver_count TEXT, currently_insured TEXT,
+        status TEXT NOT NULL, transferred INTEGER NOT NULL, created_at TEXT NOT NULL
       );
     `);
     const count = this.db.prepare("SELECT COUNT(*) AS n FROM policies").get() as Row;
@@ -347,5 +383,37 @@ export class SqliteRepo implements PolicyRepo {
 
   openTickets(): Ticket[] {
     return (this.db.prepare("SELECT * FROM tickets WHERE status = 'open' ORDER BY urgent DESC, id ASC").all() as Row[]).map((r) => this.toTicket(r));
+  }
+
+  private toLead(r: Row): Lead {
+    return {
+      leadNumber: String(LEAD_BASE + (r.id as number)),
+      phone: r.phone as string,
+      fullName: r.full_name as string | null,
+      zipCode: r.zip_code as string | null,
+      vehicleYear: r.vehicle_year as string | null,
+      vehicleMake: r.vehicle_make as string | null,
+      vehicleModel: r.vehicle_model as string | null,
+      driverCount: r.driver_count as string | null,
+      currentlyInsured: r.currently_insured as string | null,
+      status: r.status as Lead["status"],
+      transferred: r.transferred === 1,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  createLead(input: NewLead, now: Date = new Date()): Lead {
+    const v = input.values;
+    const res = this.db
+      .prepare(
+        `INSERT INTO leads (phone, full_name, zip_code, vehicle_year, vehicle_make, vehicle_model, driver_count, currently_insured, status, transferred, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(input.phone, v.full_name ?? null, v.zip_code ?? null, v.vehicle_year ?? null, v.vehicle_make ?? null, v.vehicle_model ?? null, v.driver_count ?? null, v.currently_insured ?? null, input.complete ? "complete" : "partial", input.transferred ? 1 : 0, now.toISOString());
+    return this.toLead(this.db.prepare("SELECT * FROM leads WHERE id = ?").get(Number(res.lastInsertRowid)) as Row);
+  }
+
+  leads(): Lead[] {
+    return (this.db.prepare("SELECT * FROM leads ORDER BY id DESC").all() as Row[]).map((r) => this.toLead(r));
   }
 }

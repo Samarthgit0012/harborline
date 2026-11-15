@@ -1,7 +1,7 @@
 import type { Action, Flow } from "./types.js";
 
 /** Code-driven services the flow may hand a call to (see src/svc). The server validates against this. */
-export const SERVICE_NAMES = ["policy", "billing", "claimstatus", "fnol", "handoff", "voicemail", "optout"];
+export const SERVICE_NAMES = ["policy", "billing", "claimstatus", "fnol", "handoff", "voicemail", "optout", "quote"];
 
 export interface FlowOptions {
   /** Where "speak to an agent" rings. If absent, callers are told no agent is available. */
@@ -15,12 +15,6 @@ export interface FlowOptions {
  */
 export function buildHarborlineFlow(opts: FlowOptions = {}): Flow {
   const toAgent: Action = { type: "goto", node: "agent" };
-  const comingSoon = (what: string): Action => ({
-    type: "say",
-    text: `${what} will be available soon. Returning to the main menu.`,
-    then: { type: "goto", node: "main" },
-  });
-
   return {
     start: "welcome",
     closedStart: "closed",
@@ -144,7 +138,8 @@ export function buildHarborlineFlow(opts: FlowOptions = {}): Flow {
           then: toAgent,
         },
       },
-      quotes: { kind: "action", action: comingSoon("Quote service") },
+      // The AI quote line when it is switched on; otherwise the quote service says "coming soon" (see src/svc/quote.ts).
+      quotes: { kind: "action", action: { type: "service", name: "quote", back: "main" } },
       // After-hours twin of "claims": reporting a loss works 24/7 and returns to the AFTER-HOURS menu.
       closedClaims: { kind: "action", action: { type: "service", name: "fnol", back: "closed" } },
       agent: {

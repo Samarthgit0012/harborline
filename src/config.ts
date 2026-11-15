@@ -36,6 +36,11 @@ export interface Config {
   hoursMode?: "business" | "always-open";
   /** Your Twilio number (E.164). Used by the setup and readiness tools to find and configure it. */
   twilioPhoneNumber?: string;
+  /** The AI quote line ("press 4"). "off" (default): callers hear "coming soon". "on" needs a Gemini key and an https address. */
+  aiMode?: "off" | "on";
+  geminiApiKey?: string;
+  /** Overrides the default Gemini model. Model names change, so this is a setting, not code. */
+  geminiModel?: string;
 }
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -117,6 +122,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`TWILIO_PHONE_NUMBER must be E.164 like +15551234567 (got "${twilioPhoneNumber}")`);
   }
 
+  const aiMode = (env.AI_MODE || "off") as "off" | "on";
+  if (!["off", "on"].includes(aiMode)) throw new Error('AI_MODE must be "off" or "on"');
+  const geminiApiKey = env.GEMINI_API_KEY || undefined;
+  if (aiMode === "on") {
+    if (!geminiApiKey) throw new Error("AI_MODE=on needs GEMINI_API_KEY");
+    // The AI voice connects back to us over a WebSocket, and Twilio requires wss:// (secure) for that.
+    if (!publicBaseUrl.startsWith("https://")) throw new Error("AI_MODE=on needs an https PUBLIC_BASE_URL (Twilio requires a wss:// address)");
+  }
+  const geminiModel = env.GEMINI_MODEL || undefined;
+  if (geminiModel && !/^[A-Za-z0-9._-]{1,64}$/.test(geminiModel)) throw new Error("GEMINI_MODEL must be a model name like gemini-3.5-flash-lite");
+
   return {
     authToken,
     publicBaseUrl,
@@ -137,5 +153,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     retentionMode,
     hoursMode,
     twilioPhoneNumber,
+    aiMode,
+    geminiApiKey,
+    geminiModel,
   };
 }

@@ -53,6 +53,10 @@ export interface Session {
   contactPhone?: string;
   /** Agent-call recording: "recorded" = told it may be recorded and did not decline; "declined" = pressed 2. */
   recordingChoice?: "recorded" | "declined";
+  /** Set by the AI quote line when it has finished with the call: what happens next, and the closing words to speak. */
+  aiOutcome?: { end: "done" | "transfer"; say: string; urgent: boolean; why?: string };
+  /** What the AI collected, as spoken text for the agent's whisper. Written by our code from validated values, never raw model text. */
+  quoteNote?: string;
 }
 
 export class MemoryStateStore implements StateStore {

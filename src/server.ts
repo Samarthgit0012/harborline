@@ -1,5 +1,5 @@
 import { loadConfig } from "./config.js";
-import { createApp } from "./app.js";
+import { createApp, listen } from "./app.js";
 import { log, maskPhone } from "./log.js";
 import { describeMode, startupWarnings } from "./ops/startup.js";
 import { demoPoliciesFromEnv } from "./ops/demo.js";
@@ -16,7 +16,7 @@ if (seeded.length) {
   for (const p of seeded) log("info", "demo_customer_seeded", { policy: p.policyNumber, phone: maskPhone(p.phone) });
 }
 
-const server = createApp(config).listen(config.port, () => {
+const server = listen(createApp(config), config.port, undefined, () => {
   console.log(`Harborline IVR listening on :${config.port}`);
   for (const line of describeMode(config)) console.log(`  ${line}`);
   for (const w of startupWarnings(config)) console.log(`  !! ${w}`);

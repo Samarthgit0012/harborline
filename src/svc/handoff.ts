@@ -28,9 +28,9 @@ export function mountHandoff(r: Router, d: SvcDeps) {
   };
 
   /** The reason carried between steps of the handoff, restricted to the values we know. */
-  const reasonOf = (req: Request): string => {
+  const reasonOf = (req: Request): HandoffContext["reason"] => {
     const v = req.query.reason;
-    return v === "claim_injury" || v === "campaign_response" ? v : "general";
+    return v === "claim_injury" || v === "campaign_response" || v === "quote_request" ? v : "general";
   };
 
   /** The caller wants a person. Decide: no agent line, after hours, or into the line. */
@@ -52,11 +52,12 @@ export function mountHandoff(r: Router, d: SvcDeps) {
         return send(res, t);
       }
       const injury = req.query.reason === "claim_injury";
-      const reason = injury ? "claim_injury" : req.query.reason === "campaign_response" ? "campaign_response" : "general";
+      const reason = reasonOf(req);
       const policy = s.authedPolicy ?? s.fnol?.policyNumber;
       const ctx: HandoffContext = {
         reason,
-        urgent: injury,
+        urgent: injury || (reason === "quote_request" && !!s.aiOutcome?.urgent),
+        note: reason === "quote_request" ? s.quoteNote : undefined,
         verified: !!s.authedPolicy,
         policyLast4: policy?.slice(-4),
         claimNumber: s.claimNumber,
